@@ -1,0 +1,1051 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>Türkiye İl Haritası</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@500&display=swap">
+<style>
+/* Düzen: tam ekran beyaz zemin üzerinde kırmızı il haritası. İl üzerine gelince yükselir ve parlar;
+   bir süre beklenince ayrıntı kartı, ilin bulunduğu yarının karşı alt köşesine yerleşir. */
+:root {
+  --display: 'Bricolage Grotesque', 'Segoe UI', system-ui, sans-serif;
+  --body: 'Instrument Sans', 'Segoe UI', system-ui, sans-serif;
+  --mono: 'JetBrains Mono', ui-monospace, 'SFMono-Regular', Menlo, monospace;
+
+  --bg: #ffffff;
+  --ink: #1d0e10;
+  --muted: #7b5a5e;
+  --red: #d71f2b;
+  --red-hi: #f2273a;
+  --red-deep: #8f1019;
+  --seam: #ffffff;
+  --card-line: #f1d5d8;
+  --tint: #fdeced;
+  --tint-line: #f4c3c7;
+  --code: rgba(255, 255, 255, 0.72);
+  color-scheme: light;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--body);
+  font-size: 15px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+.app { height: 100%; display: flex; flex-direction: column; padding-inline: clamp(16px, 2.5vw, 36px); padding-block: 20px; }
+
+.stage { position: relative; flex: 1; min-height: 0; overflow: auto; background: var(--bg); }
+.map { display: block; width: 100%; height: 100%; min-width: 780px; overflow: visible; }
+
+.il {
+  fill: var(--red);
+  stroke: var(--seam);
+  stroke-width: 1px;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+  cursor: pointer;
+  transition: opacity .2s ease;
+  outline: none;
+}
+.map.dim .il:not(.on) { opacity: .5; }
+.il:focus-visible { stroke: var(--ink); stroke-width: 2px; }
+
+.pop {
+  fill: var(--red-hi);
+  stroke: #ffffff;
+  stroke-width: 1.6px;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+  pointer-events: none;
+  transform-box: fill-box;
+  transform-origin: center;
+  transform: scale(1);
+  transition: transform .26s cubic-bezier(.2, .9, .25, 1.25), opacity .2s ease;
+  filter:
+    drop-shadow(0 0 4px rgba(242, 39, 58, .9))
+    drop-shadow(0 0 16px rgba(242, 39, 58, .65))
+    drop-shadow(0 10px 12px rgba(80, 8, 14, .35));
+}
+.pop.lift { transform: scale(var(--s, 1.06)); }
+.pop.out { opacity: 0; }
+
+.code {
+  font: 500 8.5px var(--mono);
+  fill: var(--code);
+  text-anchor: middle;
+  dominant-baseline: central;
+  pointer-events: none;
+  user-select: none;
+}
+
+.tip {
+  position: absolute; left: 0; top: 0;
+  padding: 4px 10px;
+  border-radius: 8px;
+  background: #ffffff;
+  border: 1px solid var(--card-line);
+  box-shadow: 0 6px 18px -6px rgba(80, 8, 14, .3);
+  font: 600 12.5px var(--body);
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity .12s;
+  z-index: 2;
+}
+.tip.on { opacity: 1; }
+.tip b { font-family: var(--mono); font-weight: 500; color: var(--red); margin-right: 7px; }
+
+/* ---------- köşe kartı ---------- */
+.card {
+  position: fixed;
+  right: 18px;
+  bottom: calc(18px + env(safe-area-inset-bottom, 0px));
+  width: min(380px, calc(100vw - 32px));
+  max-height: calc(100% - 36px);
+  overflow: auto;
+  border-radius: 18px;
+  background: #ffffff;
+  border: 1px solid var(--card-line);
+  box-shadow: 0 26px 60px -14px rgba(100, 10, 18, .45), 0 0 0 1px rgba(255, 255, 255, .6) inset;
+  z-index: 10;
+  visibility: hidden;
+  opacity: 0;
+  transform: translateY(14px) scale(.97);
+  transform-origin: bottom right;
+  transition: opacity .2s ease, transform .26s cubic-bezier(.2, .9, .25, 1), visibility 0s linear .26s;
+}
+.card.left { right: auto; left: 18px; transform-origin: bottom left; }
+.card.in { visibility: visible; opacity: 1; transform: none; transition: opacity .2s ease, transform .26s cubic-bezier(.2, .9, .25, 1), visibility 0s; }
+
+.banner { position: relative; height: 150px; background: #fde8ea; }
+.banner .art, .banner .art svg { display: block; width: 100%; height: 100%; }
+.plate {
+  position: absolute; left: 12px; top: 12px;
+  min-width: 38px; height: 30px;
+  display: grid; place-items: center;
+  padding-inline: 9px;
+  border-radius: 8px;
+  background: #ffffff;
+  color: var(--red);
+  font: 500 15px var(--mono);
+  box-shadow: 0 4px 10px -4px rgba(80, 8, 14, .4);
+}
+.cap {
+  position: absolute; left: 12px; bottom: 10px; max-width: calc(100% - 24px);
+  padding: 3px 10px; border-radius: 999px;
+  background: rgba(255, 255, 255, .94); color: var(--red-deep);
+  font: 600 12px var(--body); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  box-shadow: 0 4px 10px -4px rgba(80, 8, 14, .4);
+}
+.x {
+  position: absolute; right: 10px; top: 10px;
+  width: 30px; height: 30px;
+  display: grid; place-items: center;
+  border: 0; border-radius: 50%;
+  background: #ffffff;
+  color: var(--red-deep);
+  font: 400 21px/1 var(--body);
+  cursor: pointer;
+  box-shadow: 0 4px 10px -4px rgba(80, 8, 14, .4);
+}
+.x:hover { background: var(--tint); }
+.x:focus-visible { outline: 2px solid var(--red-deep); outline-offset: 2px; }
+
+.c-body { padding: 16px 18px 18px; }
+.card h2 { margin: 0; font-family: var(--display); font-weight: 700; font-size: 28px; line-height: 1.1; letter-spacing: -0.015em; text-wrap: balance; }
+.c-region { margin: 6px 0 0; display: flex; align-items: center; gap: 7px; color: var(--muted); font-size: 12.5px; }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--red); flex: none; }
+.c-desc { margin: 12px 0 0; font-size: 14.5px; line-height: 1.55; }
+.c-label { margin: 16px 0 8px; font: 600 11px var(--body); letter-spacing: .09em; text-transform: uppercase; color: var(--muted); }
+.c-known { margin: 0; padding: 0; list-style: none; display: flex; flex-wrap: wrap; gap: 6px; }
+.c-known li {
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--tint-line);
+  background: var(--tint);
+  color: var(--red-deep);
+  font-size: 12.5px;
+  font-weight: 500;
+}
+
+@media (max-width: 640px) {
+  .card, .card.left { left: 16px; right: 16px; width: auto; transform-origin: bottom center; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .pop, .card, .il, .tip { transition: none !important; }
+}
+</style>
+
+<div class="app">
+  <div class="stage" id="stage">
+    <svg class="map" id="map" role="group" aria-label="Türkiye'nin 81 ilinin haritası" preserveAspectRatio="xMidYMid meet">
+      <g id="provinces"></g>
+      <g id="codes"></g>
+      <g id="pop"></g>
+    </svg>
+    <div class="tip" id="tip" aria-hidden="true"></div>
+  </div>
+</div>
+
+<aside class="card" id="card" aria-live="polite" aria-hidden="true">
+  <div class="banner">
+    <div class="art" id="c-art"></div>
+    <span class="plate" id="c-code"></span>
+    <span class="cap" id="c-cap"></span>
+    <button class="x" id="c-close" type="button" aria-label="Kartı kapat">×</button>
+  </div>
+  <div class="c-body">
+    <h2 id="c-name"></h2>
+    <p class="c-region"><i class="dot"></i><span id="c-region"></span></p>
+    <p class="c-desc" id="c-desc"></p>
+    <p class="c-label">Ünlü olduğu şeyler</p>
+    <ul class="c-known" id="c-known"></ul>
+  </div>
+</aside>
+
+<script>
+(function () {
+  var D = {"bbox":[2.7,8.2,1005.2,435.3],"provinces":[{"code":1,"name":"Adana","region":"Akdeniz Bölgesi","d":"M523.2,372.2 L522.3,372.9 L518.1,376.6 L513.5,379.9 L509.5,382.1 L502.0,386.0 L495.9,383.7 L489.9,380.9 L487.0,374.5 L484.4,368.0 L482.5,361.3 L480.7,354.6 L477.5,348.4 L473.7,342.5 L469.7,336.8 L466.3,330.7 L471.0,325.8 L476.1,321.2 L480.4,315.9 L485.0,310.9 L489.0,305.3 L492.8,299.7 L496.6,294.0 L500.3,288.3 L509.8,289.6 L519.1,292.3 L528.6,291.3 L538.2,290.7 L539.9,300.0 L542.3,309.0 L546.0,317.7 L548.1,326.8 L544.8,332.4 L541.6,338.0 L538.5,343.7 L535.3,349.3 L531.8,354.8 L528.6,360.4 L525.9,366.3Z","cx":508.5,"cy":333.3,"desc":"Seyhan Nehri kıyısında, Çukurova'nın verimli ve sıcak ovasında kurulu; Türkiye'nin büyük tarım ve sanayi merkezlerinden biri.","known":["Adana kebap","Şalgam suyu","Çukurova pamuğu ve narenciyesi","Taşköprü"],"pic":"bridge","cap":"Taşköprü"},{"code":2,"name":"Adıyaman","region":"Güneydoğu Anadolu Bölgesi","d":"M688.7,273.2 L695.2,277.9 L701.7,282.7 L697.2,285.8 L692.8,289.0 L688.5,292.3 L684.2,295.6 L679.9,299.0 L675.5,302.1 L671.4,305.7 L667.1,309.0 L663.3,312.9 L659.3,316.6 L655.3,320.3 L651.3,324.0 L647.7,328.1 L644.4,332.4 L641.1,336.8 L637.6,341.0 L632.2,337.4 L626.8,333.7 L622.2,329.1 L618.2,323.9 L616.4,314.9 L614.0,306.0 L614.7,296.8 L614.8,287.6 L623.8,284.3 L632.4,280.4 L641.7,278.5 L650.9,276.1 L660.4,275.6 L669.8,274.5 L679.2,273.7Z","cx":650.9,"cy":302.0,"desc":"Komagene Krallığı'nın dev tepe mezarlarına ev sahipliği yapar; Atatürk Barajı'nın göl manzarası da buradadır.","known":["Nemrut Dağı (UNESCO)","Cendere Köprüsü","Kahta","Atatürk Barajı"],"pic":"nemrut","cap":"Nemrut Dağı"},{"code":3,"name":"Afyonkarahisar","region":"Ege Bölgesi","d":"M308.6,211.6 L309.1,212.4 L305.3,221.0 L302.1,229.9 L297.5,238.2 L291.8,245.7 L286.9,247.1 L282.1,248.7 L277.2,250.3 L272.4,252.0 L267.7,253.8 L262.8,255.2 L257.8,256.5 L253.0,257.9 L248.7,260.8 L244.6,263.8 L240.6,266.9 L236.5,270.0 L232.2,272.7 L227.7,275.2 L223.0,277.1 L218.4,279.4 L215.7,278.5 L209.5,273.2 L204.9,266.4 L205.3,258.2 L204.3,250.1 L203.2,241.9 L201.1,234.0 L206.5,229.0 L211.4,223.6 L217.3,219.3 L222.8,214.4 L228.7,210.0 L235.0,206.1 L240.3,201.2 L245.7,196.1 L253.6,198.1 L261.4,200.0 L269.3,202.1 L277.0,204.7 L284.9,206.6 L292.9,207.9 L300.8,209.7Z","cx":249.6,"cy":235.1,"desc":"Volkanik bir kayanın üstündeki kalesi ve termal suları ile bilinir; yıllardır Türkiye'nin haşhaş üretim merkezidir.","known":["Afyon kaymağı","Afyon sucuğu","Termal tesisler","Haşhaş tarlaları"],"pic":"rockcastle","cap":"Afyon Kalesi"},{"code":4,"name":"Ağrı","region":"Doğu Anadolu Bölgesi","d":"M968.8,195.7 L960.1,199.7 L951.1,202.7 L941.8,205.0 L932.8,208.1 L923.2,208.6 L913.8,209.7 L904.3,211.0 L894.8,211.4 L888.3,208.1 L881.8,204.7 L878.4,199.9 L874.9,195.2 L875.2,189.5 L876.0,183.8 L876.9,178.1 L878.1,172.4 L879.8,166.9 L881.4,161.4 L883.8,156.1 L886.0,150.8 L894.4,151.0 L902.7,150.3 L911.0,150.6 L919.4,150.5 L927.8,151.1 L936.1,152.0 L944.4,151.1 L952.8,150.8 L955.2,156.3 L958.1,161.6 L960.7,167.0 L963.4,172.3 L964.3,178.3 L965.6,184.1 L967.4,189.8Z","cx":919.1,"cy":179.2,"desc":"5.137 metreyle Türkiye'nin en yüksek zirvesi Ağrı Dağı'na, yüksek yaylalara ve İran sınırındaki masalsı bir saraya sahiptir.","known":["Ağrı Dağı","İshak Paşa Sarayı","Balık Gölü","Diyadin kaplıcaları"],"pic":"ararat","cap":"Ağrı Dağı"},{"code":5,"name":"Amasya","region":"Karadeniz Bölgesi","d":"M507.5,136.0 L505.8,127.4 L503.5,119.0 L501.2,110.6 L499.6,102.0 L496.9,93.6 L494.8,85.1 L491.3,77.1 L487.7,69.1 L494.8,72.7 L501.6,76.9 L508.7,80.5 L516.1,83.6 L522.9,87.9 L530.1,91.4 L537.6,94.4 L545.2,96.8 L542.9,102.8 L539.9,108.5 L536.3,113.9 L532.8,119.4 L531.1,125.6 L529.4,131.8 L526.5,137.6 L524.2,143.6 L515.4,140.7Z","cx":516.2,"cy":106.2,"desc":"Yeşilırmak boyunca uzanan Osmanlı evleri ve kayalara oyulmuş Pontus kral mezarlarıyla ünlü, kayalıklar arasına sıkışmış bir şehir.","known":["Kral kaya mezarları","Yalıboyu evleri","Amasya elması","Hazeranlar Konağı"],"pic":"rocktombs","cap":"Kral Kaya Mezarları"},{"code":6,"name":"Ankara","region":"İç Anadolu Bölgesi","d":"M309.1,212.4 L308.6,211.6 L306.9,203.3 L306.0,194.8 L306.0,186.3 L305.0,177.9 L303.8,169.5 L302.6,161.1 L302.5,152.6 L302.1,144.1 L308.1,139.1 L314.5,134.8 L320.0,129.4 L325.2,123.7 L329.5,117.3 L333.4,110.6 L338.3,104.6 L343.3,98.8 L349.9,98.7 L356.3,97.3 L362.6,100.6 L368.5,104.5 L374.3,108.6 L379.7,113.3 L385.4,117.4 L391.5,121.0 L397.2,125.2 L403.1,129.1 L402.4,137.3 L401.6,145.5 L401.6,153.8 L400.7,162.0 L401.4,170.2 L401.7,178.4 L402.2,186.6 L403.1,194.8 L399.8,201.3 L395.6,207.2 L390.7,212.6 L386.7,218.6 L376.9,217.5 L367.2,216.0 L357.8,213.0 L348.3,210.9 L338.5,212.0 L328.7,212.1 L318.9,212.0Z","cx":354.5,"cy":162.9,"desc":"1923'ten beri Cumhuriyet'in başkenti; kale çevresindeki eski kent, Anadolu'nun eski uygarlıklarını anlatan müzeler ve Atatürk'ün anıt mezarı buradadır.","known":["Anıtkabir","Anadolu Medeniyetleri Müzesi","Ankara tiftiği","Ankara Kalesi"],"pic":"anitkabir","cap":"Anıtkabir"},{"code":7,"name":"Antalya","region":"Akdeniz Bölgesi","d":"M338.9,407.8 L336.5,406.5 L332.1,402.4 L328.6,397.5 L324.5,393.2 L320.5,388.7 L312.5,385.6 L304.5,382.2 L298.2,376.4 L291.1,371.6 L281.5,371.2 L272.0,370.4 L262.6,368.4 L253.7,364.7 L251.6,369.6 L250.1,374.8 L247.3,379.3 L244.6,383.9 L241.2,388.1 L237.3,392.0 L233.8,396.1 L229.7,399.7 L221.6,404.5 L215.2,406.5 L208.7,408.2 L202.0,409.3 L195.5,411.0 L194.2,403.9 L193.0,396.7 L194.2,389.6 L194.8,382.3 L197.1,377.8 L199.6,373.3 L201.8,368.7 L204.2,364.1 L205.6,359.2 L207.3,354.4 L208.7,349.4 L210.3,344.6 L213.7,340.7 L217.2,337.0 L220.6,333.1 L223.9,329.2 L226.6,324.9 L229.1,320.4 L232.0,316.2 L235.2,312.2 L242.3,312.9 L249.4,313.1 L256.5,313.6 L263.5,314.3 L270.5,313.1 L277.6,312.7 L284.7,312.7 L291.8,312.2 L295.2,315.9 L298.7,319.4 L302.1,323.0 L305.3,326.9 L308.3,330.8 L311.1,334.9 L313.9,339.0 L316.5,343.3 L319.3,347.4 L322.2,351.4 L325.0,355.5 L327.7,359.7 L329.7,364.3 L332.0,368.7 L334.2,373.1 L336.4,377.6 L336.2,385.2 L336.2,392.8 L337.0,400.4Z","cx":261.0,"cy":357.1,"desc":"Turkuaz Kıyı: tarihî bir liman semti, Toros Dağları'nın eteğinde plajlar ve Anadolu'nun en iyi korunmuş Roma kentlerinden bazıları.","known":["Kaleiçi","Aspendos Tiyatrosu","Düden Şelaleleri","Olimpos ve Yanartaş"],"pic":"yivli","cap":"Yivli Minare"},{"code":8,"name":"Artvin","region":"Karadeniz Bölgesi","d":"M812.8,60.3 L817.8,57.9 L822.5,54.8 L826.7,51.2 L830.0,46.6 L834.3,54.8 L843.9,56.2 L849.5,54.5 L854.5,51.4 L863.6,48.0 L873.2,46.6 L876.4,45.4 L877.4,53.0 L877.8,60.7 L877.5,68.4 L877.8,76.0 L876.0,83.5 L874.1,90.9 L873.6,98.6 L872.5,106.3 L869.3,111.7 L863.6,109.1 L857.8,106.6 L852.3,103.7 L846.8,100.7 L840.5,100.1 L834.3,99.0 L828.2,97.9 L822.0,96.4 L819.8,87.4 L816.5,78.6 L814.8,69.4Z","cx":847.9,"cy":77.2,"desc":"Dik yeşil vadiler, Çoruh Nehri'nde rafting ve Kaçkar Dağları'nın eteğinde yayla köyleri.","known":["Çoruh'ta rafting","Kaçkar Dağları","Borçka Karagöl","Macahel vadisi"],"pic":"kackar","cap":"Kaçkar Dağları"},{"code":9,"name":"Aydın","region":"Ege Bölgesi","d":"M82.4,339.2 L75.7,336.3 L69.4,332.5 L68.5,327.2 L66.8,322.2 L64.1,315.3 L71.3,310.9 L78.5,306.6 L86.0,302.6 L93.7,299.0 L100.2,293.6 L107.0,288.6 L113.1,282.7 L118.8,276.5 L128.7,276.7 L138.3,274.6 L139.5,280.1 L140.2,285.6 L140.5,291.1 L141.3,296.7 L140.3,302.1 L139.0,307.6 L138.8,313.1 L138.3,318.7 L131.7,322.2 L124.7,325.1 L118.1,328.6 L111.6,332.4 L104.4,334.6 L97.1,336.3 L89.7,337.4Z","cx":106.1,"cy":308.4,"desc":"Büyük Menderes vadisinin incir bahçeleri ve mermer Afrodisias'tan Didyma kehanet merkezine uzanan antik kentler.","known":["Aydın inciri","Afrodisias (UNESCO)","Didim Apollon Tapınağı","Kuşadası"],"pic":"columns","cap":"Didim Apollon Tapınağı"},{"code":10,"name":"Balıkesir","region":"Marmara Bölgesi","d":"M47.1,205.4 L48.6,200.2 L50.1,194.9 L51.9,189.7 L53.4,184.4 L54.4,179.0 L55.2,173.6 L56.3,168.2 L57.9,162.9 L59.7,157.8 L61.8,152.6 L64.2,147.7 L66.7,142.8 L69.6,138.1 L72.4,133.4 L75.3,128.7 L78.4,124.2 L85.5,124.8 L89.6,121.4 L93.5,117.9 L100.4,117.9 L104.1,125.5 L109.5,125.9 L114.8,124.8 L115.4,124.7 L117.9,129.1 L120.7,133.4 L122.9,138.0 L125.2,142.6 L127.8,147.0 L130.4,151.3 L133.4,155.4 L136.2,159.7 L137.8,164.5 L139.2,169.4 L141.0,174.2 L142.9,178.9 L144.8,183.6 L146.5,188.4 L148.1,193.2 L149.6,198.1 L144.2,198.3 L138.8,198.7 L133.4,199.4 L128.1,200.1 L122.6,199.9 L117.2,200.0 L111.8,199.8 L106.4,199.7 L101.0,200.5 L95.6,201.0 L90.2,201.4 L84.8,202.0 L79.6,203.6 L74.4,205.0 L69.2,206.6 L63.9,208.1 L55.5,206.6Z","cx":97.0,"cy":169.8,"desc":"Tek ilde iki kıyı: Ayvalık çevresinde Ege zeytinlikleri ve Kaz Dağları'nın (İda Dağı) çam ormanları.","known":["Ayvalık zeytinyağı","Cunda Adası","Kaz Dağları","Edremit Körfezi"],"pic":"windmill","cap":"Ayvalık"},{"code":11,"name":"Bilecik","region":"Marmara Bölgesi","d":"M244.1,125.8 L239.1,133.8 L234.4,142.0 L229.7,150.2 L223.7,157.5 L216.6,156.6 L209.4,155.9 L202.3,155.8 L195.2,154.8 L195.8,146.6 L196.6,138.5 L194.4,130.6 L193.2,122.5 L199.6,116.3 L205.6,115.2 L211.7,114.7 L217.8,115.3 L223.8,116.3 L229.3,117.5 L234.6,119.6 L239.2,122.9Z","cx":214.9,"cy":135.4,"desc":"Osmanlı Devleti'nin kökenlerine bağlı küçük ve yeşil bir il; Ertuğrul Gazi'nin türbesi Söğüt'tedir.","known":["Söğüt ve Ertuğrul Gazi","Şeyh Edebali Türbesi","Bilecik bej mermeri","Osmanlı'nın başlangıcı"],"pic":"turbe","cap":"Ertuğrul Gazi Türbesi"},{"code":12,"name":"Bingöl","region":"Doğu Anadolu Bölgesi","d":"M803.2,252.5 L796.9,250.2 L790.5,247.8 L784.4,245.0 L778.4,242.0 L771.8,240.7 L765.1,239.7 L758.6,237.9 L752.0,236.6 L751.7,230.9 L752.1,225.3 L753.0,219.7 L753.6,214.1 L754.7,208.6 L755.4,202.9 L756.2,197.4 L757.2,191.8 L763.8,185.6 L769.6,178.5 L775.9,181.7 L782.4,184.3 L788.4,187.9 L793.9,192.2 L799.9,195.9 L805.8,199.6 L811.8,203.2 L818.0,206.3 L815.7,211.9 L813.9,217.7 L811.8,223.5 L809.2,229.0 L807.8,234.9 L806.6,240.9 L804.8,246.7Z","cx":782.9,"cy":216.8,"desc":"Murat Nehri'nin kaynaklarına yakın karlı dağlar ve buzul gölleri; bal üretimiyle ünlüdür.","known":["Yayla balı","Buzul gölleri","Hesarek Kayak Merkezi","Murat Nehri"],"pic":"honey","cap":"Bingöl balı"},{"code":13,"name":"Bitlis","region":"Doğu Anadolu Bölgesi","d":"M881.8,204.7 L888.3,208.1 L894.8,211.4 L896.0,216.6 L897.4,221.7 L898.2,227.0 L899.2,232.2 L899.0,237.5 L899.2,242.8 L899.7,248.1 L900.4,253.4 L901.2,258.7 L901.7,264.0 L902.9,269.1 L903.9,274.3 L903.8,279.7 L903.8,285.0 L904.3,290.2 L904.6,295.6 L903.8,295.6 L896.2,291.7 L888.9,287.1 L881.6,282.6 L874.5,277.8 L866.3,275.3 L858.2,272.5 L849.9,270.0 L842.0,266.7 L846.2,258.5 L850.7,250.4 L856.3,243.1 L861.1,235.2 L866.2,227.5 L872.1,220.4 L877.3,212.7Z","cx":879.1,"cy":252.7,"desc":"Bir vadiye kurulu taş şehir; Van Gölü kıyısı, geniş Nemrut krater gölü ve Ahlat'ın Selçuklu mezar taşlarıyla anılır.","known":["Nemrut Krater Gölü","Ahlat Selçuklu Meydan Mezarlığı","Van Gölü kıyısı","Bitlis tütünü"],"pic":"ahlat","cap":"Ahlat Selçuklu Mezarlığı"},{"code":14,"name":"Bolu","region":"Karadeniz Bölgesi","d":"M290.1,70.0 L295.6,71.5 L301.0,72.8 L306.2,75.0 L311.5,77.0 L317.0,78.1 L322.3,79.7 L327.7,81.4 L333.1,82.8 L338.3,90.8 L343.3,98.8 L338.3,104.6 L333.4,110.6 L329.5,117.3 L325.2,123.7 L320.0,129.4 L314.5,134.8 L308.1,139.1 L302.1,144.1 L294.0,138.9 L286.6,132.5 L277.9,128.3 L269.5,123.7 L272.3,117.0 L274.5,110.2 L276.3,103.2 L278.4,96.3 L281.3,89.7 L284.7,83.3 L287.1,76.5Z","cx":304.3,"cy":105.3,"desc":"İstanbul ile Ankara arasında ormanlar, göller ve dağ geçitleri; köklü bir aşçılık geleneğine sahiptir.","known":["Abant Gölü","Yedigöller Milli Parkı","Mengen aşçıları","Mudurnu konakları"],"pic":"lakepines","cap":"Abant Gölü"},{"code":15,"name":"Burdur","region":"Akdeniz Bölgesi","d":"M178.6,344.6 L183.8,336.6 L189.4,328.9 L193.6,320.4 L197.4,311.7 L201.7,303.2 L206.1,294.9 L210.9,286.7 L215.7,278.5 L218.4,279.4 L222.6,287.6 L227.0,295.7 L230.7,304.2 L235.2,312.2 L232.0,316.2 L229.1,320.4 L226.6,324.9 L223.9,329.2 L220.6,333.1 L217.2,337.0 L213.7,340.7 L210.3,344.6 L208.7,349.4 L207.3,354.4 L205.6,359.2 L204.2,364.1 L201.8,368.7 L199.6,373.3 L197.1,377.8 L194.8,382.3 L193.2,377.4 L191.7,372.4 L190.2,367.5 L189.2,362.4 L186.9,357.7 L184.5,353.1 L181.4,348.9Z","cx":206.5,"cy":328.9,"desc":"Salda Gölü'nün beyaz kıyıları 'Türkiye'nin Maldivleri' olarak anılır; yakınında Sagalassos antik kenti vardır.","known":["Salda Gölü","Sagalassos","Burdur Gölü","Burdur şiş"],"pic":"whitelake","cap":"Salda Gölü"},{"code":16,"name":"Bursa","region":"Marmara Bölgesi","d":"M193.2,122.5 L194.4,130.6 L196.6,138.5 L195.8,146.6 L195.2,154.8 L190.1,160.8 L185.4,167.1 L180.4,173.2 L175.9,179.7 L169.5,184.3 L163.0,188.8 L156.9,193.8 L150.7,198.6 L149.6,198.1 L148.1,193.2 L146.5,188.4 L144.8,183.6 L142.9,178.9 L141.0,174.2 L139.2,169.4 L137.8,164.5 L136.2,159.7 L133.4,155.4 L130.4,151.3 L127.8,147.0 L125.2,142.6 L122.9,138.0 L120.7,133.4 L117.9,129.1 L115.4,124.7 L124.4,122.8 L133.5,123.4 L138.6,123.9 L143.6,124.5 L148.7,124.6 L153.8,124.8 L162.9,123.4 L169.3,121.3 L162.9,118.6 L154.9,115.2 L151.1,113.8 L157.6,109.7 L165.6,106.9 L168.9,106.4 L175.1,110.2 L181.4,114.0 L187.3,118.2Z","cx":159.5,"cy":147.8,"desc":"Osmanlı'nın ilk büyük başkenti; Uludağ'ın eteğinde camileri, ipek çarşıları ve ünlü kebabıyla bilinir.","known":["Bursa ve Cumalıkızık (UNESCO)","İskender kebap","Kestane şekeri","Uludağ Kayak Merkezi"],"pic":"ulucami","cap":"Bursa Ulu Camii"},{"code":17,"name":"Çanakkale","region":"Marmara Bölgesi","d":"M54.4,111.7 L45.4,115.2 L40.0,118.6 L35.8,123.4 L29.4,127.6 L24.0,133.0 L20.4,138.1 L16.0,142.6 L9.6,148.8 L10.7,144.0 L16.0,135.7 L19.9,130.8 L24.0,126.1 L29.0,122.9 L33.1,118.6 L37.5,116.1 L41.7,113.1 L37.4,109.7 L31.8,107.5 L26.7,104.2 L21.2,103.3 L16.0,101.5 L10.6,101.7 L5.3,100.8 L3.0,93.6 L12.0,95.0 L21.1,94.9 L30.2,95.8 L39.2,96.6 L43.2,100.2 L47.4,103.5 L51.3,107.3Z M42.8,207.1 L39.8,202.4 L37.4,197.4 L44.4,193.4 L50.7,188.5 L53.9,184.4 L56.1,179.6 L49.5,178.3 L42.7,178.2 L37.6,181.4 L32.0,183.7 L25.4,184.8 L18.7,185.8 L11.2,185.8 L3.7,186.5 L5.6,180.5 L8.0,174.8 L9.6,169.0 L10.7,163.2 L9.9,158.0 L10.1,152.9 L16.0,146.0 L21.4,141.9 L25.6,139.2 L29.4,135.7 L32.9,132.0 L36.3,128.2 L45.4,124.8 L51.4,123.8 L57.3,122.8 L63.4,123.0 L69.4,123.4 L78.4,124.2 L75.3,128.7 L72.4,133.4 L69.6,138.1 L66.7,142.8 L64.2,147.7 L61.8,152.6 L59.7,157.8 L57.9,162.9 L56.3,168.2 L55.2,173.6 L54.4,179.0 L53.4,184.4 L51.9,189.7 L50.1,194.9 L48.6,200.2 L47.1,205.4Z","cx":41.0,"cy":156.9,"desc":"Boğazın bekçisi: 1915 Gelibolu muharebe alanları, Truva kalıntıları, Gökçeada ve Bozcaada.","known":["Gelibolu anıtları","Truva (UNESCO)","Assos (Behramkale)","Bozcaada şarapları"],"pic":"trojan","cap":"Truva Atı"},{"code":18,"name":"Çankırı","region":"İç Anadolu Bölgesi","d":"M376.6,71.4 L383.6,73.8 L390.3,76.7 L397.4,78.7 L404.7,80.0 L411.7,82.2 L418.6,84.7 L425.7,86.7 L433.0,87.9 L432.6,93.1 L432.6,98.4 L432.7,103.6 L433.1,108.9 L431.8,114.0 L430.5,119.1 L429.2,124.2 L427.5,129.1 L421.4,128.6 L415.3,129.1 L409.2,128.9 L403.1,129.1 L397.2,125.2 L391.5,121.0 L385.4,117.4 L379.7,113.3 L374.3,108.6 L368.5,104.5 L362.6,100.6 L356.3,97.3 L360.9,90.3 L365.0,83.2 L370.5,77.0Z","cx":398.9,"cy":100.6,"desc":"Kaya tuzu mağaraları ve Ilgaz Dağları'nın çam ormanlarıyla bilinen sakin bir İç Anadolu ili.","known":["Tuz Mağarası","Ilgaz Dağı Milli Parkı","Çankırı Kalesi"],"pic":"saltcave","cap":"Tuz Mağarası"},{"code":19,"name":"Çorum","region":"Karadeniz Bölgesi","d":"M487.7,69.1 L491.3,77.1 L494.8,85.1 L496.9,93.6 L499.6,102.0 L501.2,110.6 L503.5,119.0 L505.8,127.4 L507.5,136.0 L499.0,138.5 L490.3,140.2 L481.9,143.0 L473.3,145.2 L464.5,145.7 L455.7,146.1 L446.9,147.2 L438.1,147.6 L435.6,142.8 L432.4,138.6 L429.8,134.0 L427.5,129.1 L429.2,124.2 L430.5,119.1 L431.8,114.0 L433.1,108.9 L432.7,103.6 L432.6,98.4 L432.6,93.1 L433.0,87.9 L437.9,80.8 L443.7,74.5 L450.8,69.6 L457.7,64.6 L464.3,64.7 L470.9,63.9 L477.4,64.8 L484.0,65.4Z","cx":465.1,"cy":108.0,"desc":"Hitit İmparatorluğu'nun kalbi: başkenti Hattuşa burada; ayrıca Türkiye'nin sevdiği leblebi.","known":["Hattuşa (UNESCO)","Alacahöyük","Leblebi","İskilip dolması"],"pic":"liongate","cap":"Hattuşa Aslanlı Kapı"},{"code":20,"name":"Denizli","region":"Ege Bölgesi","d":"M138.3,318.7 L138.8,313.1 L139.0,307.6 L140.3,302.1 L141.3,296.7 L140.5,291.1 L140.2,285.6 L139.5,280.1 L138.3,274.6 L141.1,269.3 L144.9,264.6 L149.3,260.5 L153.8,256.5 L160.3,257.4 L166.7,258.4 L173.3,258.9 L179.8,259.2 L185.8,261.9 L192.0,263.9 L198.5,265.0 L204.9,266.4 L209.5,273.2 L215.7,278.5 L210.9,286.7 L206.1,294.9 L201.7,303.2 L197.4,311.7 L193.6,320.4 L189.4,328.9 L183.8,336.6 L178.6,344.6 L173.9,340.7 L169.1,337.0 L164.6,333.0 L160.4,328.6 L154.7,326.4 L149.0,324.4 L143.8,321.3Z","cx":171.9,"cy":295.3,"desc":"Pamukkale'nin beyaz travertenleri antik kaplıca kenti Hierapolis'in üstünde yükselir; Denizli aynı zamanda büyük bir havlu ve tekstil üreticisidir.","known":["Pamukkale ve Hierapolis (UNESCO)","Laodikya","Ev tekstili ve havlu","Denizli horozu"],"pic":"pamukkale","cap":"Pamukkale"},{"code":21,"name":"Diyarbakır","region":"Güneydoğu Anadolu Bölgesi","d":"M752.0,236.6 L758.6,237.9 L765.1,239.7 L771.8,240.7 L778.4,242.0 L784.4,245.0 L790.5,247.8 L796.9,250.2 L803.2,252.5 L804.4,254.3 L804.0,260.5 L803.7,266.7 L802.5,272.8 L801.2,278.8 L799.7,284.8 L798.8,290.9 L797.9,297.1 L797.4,303.2 L791.8,307.2 L786.3,311.2 L781.0,315.4 L775.2,319.1 L769.4,322.7 L763.8,326.7 L757.7,329.8 L752.0,333.5 L745.4,328.4 L739.0,323.1 L733.4,316.8 L727.4,311.0 L722.9,303.9 L718.1,297.1 L713.5,290.1 L708.9,283.1 L713.2,278.4 L717.7,274.0 L721.6,268.9 L725.7,264.1 L729.5,259.0 L733.2,253.8 L736.4,248.3 L739.5,242.7 L745.8,239.8Z","cx":759.8,"cy":281.4,"desc":"Dicle kıyısında bazalt surlu bir şehir; dünyanın en uzun sağlam surlarından biri ve yemyeşil Hevsel Bahçeleri ile çevrilidir.","known":["Surlar ve Hevsel Bahçeleri (UNESCO)","Diyarbakır karpuzu","On Gözlü Köprü","Ciğer kebabı"],"pic":"citywall","cap":"Diyarbakır Surları"},{"code":22,"name":"Edirne","region":"Marmara Bölgesi","d":"M19.2,33.6 L25.5,26.9 L29.8,18.8 L33.8,22.6 L38.0,26.2 L41.4,30.5 L45.0,34.7 L48.1,39.3 L51.4,43.7 L53.9,48.6 L56.5,53.4 L54.8,59.0 L53.5,64.7 L51.4,70.2 L48.7,75.3 L46.6,80.7 L44.1,86.0 L41.5,91.2 L39.2,96.6 L30.2,95.8 L21.1,94.9 L12.0,95.0 L3.0,93.6 L2.7,92.5 L4.2,85.6 L6.4,78.8 L7.4,70.0 L10.7,61.7 L12.5,54.5 L16.0,48.0 L16.6,40.6Z","cx":29.6,"cy":63.4,"desc":"İstanbul'dan önceki Osmanlı başkenti; Mimar Sinan'ın Selimiye Camii ile taçlanır, Bulgaristan ve Yunanistan sınırındadır.","known":["Selimiye Camii (UNESCO)","Kırkpınar yağlı güreşleri","Edirne tava ciğeri","Badem ezmesi"],"pic":"selimiye","cap":"Selimiye Camii"},{"code":23,"name":"Elazığ","region":"Doğu Anadolu Bölgesi","d":"M739.5,242.7 L736.4,248.3 L733.2,253.8 L729.5,259.0 L725.7,264.1 L721.6,268.9 L717.7,274.0 L713.2,278.4 L708.9,283.1 L701.7,282.7 L695.2,277.9 L688.7,273.2 L683.5,265.5 L677.5,258.3 L671.7,251.0 L666.5,243.3 L662.3,235.0 L658.0,226.8 L653.6,218.6 L648.6,210.7 L651.6,205.5 L655.3,200.8 L658.7,195.9 L661.5,190.6 L666.0,191.8 L671.0,194.4 L676.0,197.1 L680.8,200.0 L685.7,202.9 L691.0,204.9 L696.1,207.3 L701.3,209.6 L706.4,212.0 L710.3,216.1 L714.2,220.1 L718.3,224.1 L722.5,227.9 L726.9,231.4 L731.2,235.0 L735.5,238.8Z","cx":692.5,"cy":237.6,"desc":"Fırat'ın yukarı havzasında yüksek bir şehir; eski Harput'un kalıntıları ve baraj göllerinin manzarası.","known":["Harput","Hazar Gölü","Keban Barajı","Harput köftesi"],"pic":"tower","cap":"Harput Kalesi"},{"code":24,"name":"Erzincan","region":"Doğu Anadolu Bölgesi","d":"M768.0,162.9 L769.3,170.7 L769.6,178.5 L763.8,185.6 L757.2,191.8 L751.6,190.5 L745.9,189.4 L740.2,188.8 L734.4,188.3 L728.7,187.8 L723.0,187.1 L717.3,186.6 L711.6,186.0 L705.8,186.3 L700.1,186.7 L694.3,186.9 L688.5,186.9 L682.9,188.2 L677.2,189.3 L671.6,190.6 L666.0,191.8 L661.5,190.6 L660.8,184.0 L661.3,177.5 L660.9,170.9 L660.1,164.4 L664.6,160.2 L668.8,155.7 L672.5,150.8 L675.6,145.5 L684.3,144.2 L692.8,142.3 L701.6,142.3 L710.4,141.8 L719.0,140.3 L727.7,139.3 L736.1,136.6 L744.7,134.7 L750.3,142.1 L754.8,150.1 L761.8,156.1Z","cx":714.9,"cy":167.1,"desc":"Tulum peyniri, derin kanyonlar ve Kemaliye'nin eski taş evleriyle Fırat vadisi ili.","known":["Tulum peyniri","Karanlık Kanyon","Kemaliye taş evleri","Girlevik Şelalesi"],"pic":"canyon","cap":"Karanlık Kanyon"},{"code":25,"name":"Erzurum","region":"Doğu Anadolu Bölgesi","d":"M822.0,96.4 L828.2,97.9 L834.3,99.0 L840.5,100.1 L846.8,100.7 L852.3,103.7 L857.8,106.6 L863.6,109.1 L869.3,111.7 L871.2,116.7 L873.2,121.7 L874.5,126.8 L876.3,131.8 L878.4,136.8 L880.7,141.6 L883.5,146.1 L886.0,150.8 L883.8,156.1 L881.4,161.4 L879.8,166.9 L878.1,172.4 L876.9,178.1 L876.0,183.8 L875.2,189.5 L874.9,195.2 L867.7,196.4 L860.7,198.3 L853.9,200.8 L846.9,203.1 L839.7,203.4 L832.5,204.4 L825.3,205.4 L818.0,206.3 L811.8,203.2 L805.8,199.6 L799.9,195.9 L793.9,192.2 L788.4,187.9 L782.4,184.3 L775.9,181.7 L769.6,178.5 L769.3,170.7 L768.0,162.9 L769.6,156.1 L771.7,149.5 L774.5,143.0 L777.6,136.8 L780.0,130.2 L782.2,123.6 L784.5,117.0 L786.4,110.3 L795.5,107.3 L804.2,103.4 L813.3,100.4Z","cx":827.7,"cy":152.7,"desc":"Selçuklu çifte minareleri, sert kışları ve Palandöken'in ünlü kayak pistleriyle yüksek bir yayla şehri.","known":["Çifte Minareli Medrese","Palandöken Kayak Merkezi","Cağ kebabı","Tortum Şelalesi"],"pic":"twinminaret","cap":"Çifte Minareli Medrese"},{"code":26,"name":"Eskişehir","region":"İç Anadolu Bölgesi","d":"M302.1,144.1 L302.5,152.6 L302.6,161.1 L303.8,169.5 L305.0,177.9 L306.0,186.3 L306.0,194.8 L306.9,203.3 L308.6,211.6 L300.8,209.7 L292.9,207.9 L284.9,206.6 L277.0,204.7 L269.3,202.1 L261.4,200.0 L253.6,198.1 L245.7,196.1 L242.7,191.4 L239.4,186.9 L236.6,182.1 L233.4,177.6 L230.5,172.8 L227.8,167.9 L225.8,162.7 L223.7,157.5 L229.7,150.2 L234.4,142.0 L239.1,133.8 L244.1,125.8 L252.5,124.8 L260.5,121.9 L269.5,123.7 L277.9,128.3 L286.6,132.5 L294.0,138.9Z","cx":269.3,"cy":165.9,"desc":"Kanalları, Porsuk'ta gondol turları ve Odunpazarı'nın pastel Osmanlı evleriyle canlı bir üniversite şehri.","known":["Odunpazarı evleri","Porsuk gondolları","Lületaşı","Çibörek"],"pic":"odunpazari","cap":"Odunpazarı Evleri"},{"code":27,"name":"Gaziantep","region":"Güneydoğu Anadolu Bölgesi","d":"M618.2,323.9 L622.2,329.1 L626.8,333.7 L632.2,337.4 L637.6,341.0 L639.8,347.5 L641.6,354.2 L642.0,361.0 L641.9,367.9 L640.9,368.1 L632.3,371.5 L624.9,377.0 L618.4,377.9 L611.9,379.2 L605.4,380.2 L598.8,380.4 L591.2,375.2 L584.6,368.8 L577.9,362.4 L572.1,355.4 L572.7,349.2 L578.7,346.5 L584.6,343.9 L590.2,340.6 L596.0,337.6 L601.9,334.7 L607.6,331.6 L613.1,328.0Z","cx":610.1,"cy":354.5,"desc":"Türkiye'nin gastronomi başkenti: fıstık, baklava ve Zeugma'dan gelen dünyanın en güzel Roma mozaik koleksiyonlarından biri.","known":["Baklava ve Antep fıstığı","UNESCO Yaratıcı Şehirler (Gastronomi)","Zeugma Mozaik Müzesi","Beyran çorbası"],"pic":"baklava","cap":"Antep baklavası"},{"code":28,"name":"Giresun","region":"Karadeniz Bölgesi","d":"M652.3,86.4 L661.2,87.7 L667.4,87.2 L673.5,85.9 L679.3,83.8 L685.3,82.3 L687.1,87.7 L689.0,93.1 L686.8,99.5 L684.2,105.8 L682.0,112.3 L679.3,118.5 L678.4,125.3 L677.9,132.1 L676.4,138.7 L675.6,145.5 L672.5,150.8 L668.8,155.7 L664.6,160.2 L660.1,164.4 L656.2,160.5 L652.3,156.6 L648.9,152.2 L645.5,147.8 L642.2,143.4 L639.0,138.8 L636.7,133.8 L634.1,128.9 L636.9,123.8 L639.4,118.6 L642.3,113.5 L645.0,108.4 L646.5,102.8 L648.0,97.2 L649.8,91.7Z","cx":662.6,"cy":119.1,"desc":"Fındık bahçeleriyle kaplı dik yeşil yamaçlar, açıktaki bir ada ve Mayıs'ta neşeli Aksu Festivali.","known":["Fındık","Giresun Adası","Aksu Festivali","Kümbet Yaylası"],"pic":"island","cap":"Giresun Adası"},{"code":29,"name":"Gümüşhane","region":"Karadeniz Bölgesi","d":"M744.7,134.7 L736.1,136.6 L727.7,139.3 L719.0,140.3 L710.4,141.8 L701.6,142.3 L692.8,142.3 L684.3,144.2 L675.6,145.5 L676.4,138.7 L677.9,132.1 L678.4,125.3 L679.3,118.5 L682.0,112.3 L684.2,105.8 L686.8,99.5 L689.0,93.1 L695.7,97.1 L702.5,101.0 L709.6,104.2 L716.5,107.6 L723.9,110.0 L731.4,112.2 L738.8,114.4 L746.1,117.3 L744.5,126.0Z","cx":708.5,"cy":122.3,"desc":"Eski gümüş madenleri, yayla otlakları ve Torul'daki ünlü Karaca Mağarası ile dağlık bir il.","known":["Karaca Mağarası","Zigana Geçidi","Pestil ve köme","Gümüş madenciliği"],"pic":"cave","cap":"Karaca Mağarası"},{"code":30,"name":"Hakkâri","region":"Doğu Anadolu Bölgesi","d":"M984.5,293.6 L987.4,297.8 L990.7,301.6 L995.4,309.9 L998.8,318.8 L1000.7,327.6 L1004.1,335.9 L1003.6,344.8 L999.4,347.6 L995.0,350.2 L990.2,351.6 L985.4,353.1 L981.6,348.8 L977.2,345.4 L973.6,341.0 L969.4,337.3 L959.9,337.8 L950.7,335.9 L945.4,337.6 L940.1,338.9 L934.9,340.8 L930.1,343.5 L929.4,335.5 L928.6,327.5 L928.4,319.5 L927.2,311.5 L934.3,309.1 L941.4,306.6 L948.1,303.0 L955.0,299.8 L962.3,298.0 L969.6,296.0 L977.1,295.2Z","cx":967.8,"cy":322.8,"desc":"Türkiye'nin uzak güneydoğu köşesi: sivri Cilo-Sat zirveleri, buzullar ve Irak-İran sınırında yüksek yaylalar.","known":["Cilo ve Sat Dağları","Uludoruk (4.135 m)","Zap Suyu","Berçelan Yaylası"],"pic":"jagged","cap":"Cilo Dağları"},{"code":31,"name":"Hatay","region":"Akdeniz Bölgesi","d":"M575.3,386.6 L568.8,390.8 L567.8,397.6 L567.2,404.5 L564.0,411.1 L561.9,418.2 L558.2,423.4 L554.4,428.5 L548.6,431.2 L543.7,435.3 L534.1,433.3 L529.8,427.1 L527.8,419.3 L527.7,411.3 L528.6,403.8 L527.7,396.2 L530.5,391.5 L534.1,387.3 L538.2,383.3 L543.2,380.5 L544.3,373.2 L538.8,374.9 L533.0,375.6 L527.2,375.8 L521.4,375.4 L513.5,379.9 L512.7,380.5 L509.5,382.1 L515.9,379.5 L521.4,375.4 L526.8,374.9 L532.2,375.1 L537.6,375.7 L543.0,375.7 L548.3,374.6 L553.6,373.4 L558.9,372.5 L564.2,371.2 L570.2,378.6Z","cx":548.7,"cy":402.2,"desc":"Antik Antakya; mozaikler, kiliseler ve camilerin yan yana durduğu bir kültür buluşması. Tarihî merkezinin büyük bölümü 2023 depremlerinde ağır hasar gördü ve yeniden inşa ediliyor.","known":["Künefe","Hatay Arkeoloji Müzesi (mozaikler)","UNESCO Yaratıcı Şehirler (Gastronomi)","Harbiye şelaleleri"],"pic":"mosaic","cap":"Antakya mozaikleri"},{"code":32,"name":"Isparta","region":"Akdeniz Bölgesi","d":"M291.8,312.2 L284.7,312.7 L277.6,312.7 L270.5,313.1 L263.5,314.3 L256.5,313.6 L249.4,313.1 L242.3,312.9 L235.2,312.2 L230.7,304.2 L227.0,295.7 L222.6,287.6 L218.4,279.4 L223.0,277.1 L227.7,275.2 L232.2,272.7 L236.5,270.0 L240.6,266.9 L244.6,263.8 L248.7,260.8 L253.0,257.9 L257.8,256.5 L262.8,255.2 L267.7,253.8 L272.4,252.0 L277.2,250.3 L282.1,248.7 L286.9,247.1 L291.8,245.7 L290.6,254.0 L290.2,262.4 L289.2,270.7 L288.0,279.0 L289.0,287.3 L289.7,295.6 L290.6,304.0Z","cx":262.1,"cy":285.2,"desc":"Gül ülkesi: Isparta çevresindeki bahçeler dünyanın gül yağının büyük bölümünü sağlar; yakınında sakin Eğirdir Gölü uzanır.","known":["Gül yağı ve gül ürünleri","Eğirdir Gölü","Isparta halıları","Davraz Kayak Merkezi"],"pic":"rose","cap":"Isparta gülü"},{"code":33,"name":"Mersin","region":"Akdeniz Bölgesi","d":"M466.3,330.7 L469.7,336.8 L473.7,342.5 L477.5,348.4 L480.7,354.6 L482.5,361.3 L484.4,368.0 L487.0,374.5 L489.9,380.9 L485.0,379.6 L480.7,377.0 L471.4,374.0 L462.0,371.6 L457.1,374.4 L451.8,376.5 L447.5,380.1 L443.3,383.9 L438.7,388.2 L435.3,393.5 L429.1,398.8 L421.9,402.4 L415.6,406.2 L409.5,410.5 L402.4,412.9 L395.2,414.7 L387.9,416.7 L380.8,419.4 L373.4,420.9 L365.9,421.6 L362.1,419.7 L365.4,412.4 L369.1,405.3 L372.8,398.2 L376.7,391.2 L381.9,385.1 L386.7,378.8 L391.3,372.2 L395.3,365.3 L399.5,358.5 L403.7,351.7 L407.7,344.8 L411.6,337.8 L416.8,331.7 L421.8,325.5 L426.6,319.1 L431.0,312.4 L435.5,314.4 L440.1,316.5 L444.7,318.3 L449.5,319.8 L453.7,322.5 L458.0,325.1 L462.1,328.0Z","cx":427.0,"cy":367.7,"desc":"Narenciye bahçeleri, denizdeki kaleler ve Aziz Pavlus'un doğum yeri Tarsus ile uzun bir Akdeniz kıyısı.","known":["Tantuni","Kızkalesi","Tarsus ve Kleopatra Kapısı","Cennet ve Cehennem Mağaraları"],"pic":"seacastle","cap":"Kızkalesi"},{"code":34,"name":"İstanbul","region":"Marmara Bölgesi","d":"M113.2,39.9 L118.3,43.6 L122.8,48.0 L129.9,52.7 L136.2,58.3 L143.8,62.7 L152.2,65.1 L158.3,66.2 L164.5,67.2 L162.4,72.7 L161.8,77.5 L159.7,81.6 L154.5,82.7 L149.5,84.3 L143.6,83.7 L137.8,82.3 L129.0,80.4 L120.2,78.8 L114.5,80.9 L108.7,82.8 L108.0,74.7 L108.6,66.6 L107.6,58.6 L106.3,50.7 L109.7,45.3Z M168.2,67.2 L174.2,68.2 L180.3,68.3 L186.2,69.5 L192.3,69.9 L201.3,69.3 L197.9,75.8 L194.0,82.0 L190.1,88.3 L187.4,95.1 L181.5,95.3 L175.6,94.2 L170.9,92.5 L166.7,88.6 L162.9,84.3 L164.0,78.8 L166.1,74.0Z","cx":130.3,"cy":67.0,"desc":"İki kıtaya yayılan tek büyük şehir; Boğaz'ın iki yakasında Bizans ve Osmanlı başkenti, Türkiye'nin en büyük kenti.","known":["Ayasofya","Topkapı Sarayı","Kapalıçarşı","Boğaz vapurları"],"pic":"ayasofya","cap":"Ayasofya"},{"code":35,"name":"İzmir","region":"Ege Bölgesi","d":"M118.8,276.5 L113.1,282.7 L107.0,288.6 L100.2,293.6 L93.7,299.0 L86.0,302.6 L78.5,306.6 L71.3,310.9 L64.1,315.3 L61.4,308.5 L64.3,303.0 L67.3,297.5 L60.8,290.6 L53.4,284.5 L48.3,279.1 L42.7,274.2 L33.6,271.3 L24.0,270.8 L19.5,268.4 L15.0,266.0 L22.2,264.1 L29.4,261.9 L37.4,261.3 L45.4,262.6 L52.7,260.9 L59.8,258.4 L53.4,252.3 L46.8,253.2 L40.1,253.6 L33.3,253.5 L26.7,252.3 L22.3,247.4 L17.1,243.4 L23.5,242.6 L29.4,239.9 L35.2,240.9 L41.1,241.3 L45.9,237.2 L50.7,233.1 L51.1,227.9 L50.7,222.8 L47.0,214.6 L42.8,207.1 L47.1,205.4 L55.5,206.6 L63.9,208.1 L66.9,212.8 L69.9,217.4 L73.5,221.7 L76.9,226.1 L79.1,231.2 L81.4,236.2 L84.2,241.0 L87.0,245.8 L90.8,249.9 L94.4,254.1 L98.0,258.3 L101.8,262.4 L106.0,266.0 L110.0,269.8 L114.4,273.2Z","cx":69.5,"cy":260.2,"desc":"Türkiye'nin Ege metropolü; Efes antik kentinin ve Çeşme, Alaçatı tatil beldelerinin yanında esintili bir sahil kenti.","known":["Efes (UNESCO)","Kemeraltı Çarşısı","Konak Saat Kulesi","Boyoz"],"pic":"clocktower","cap":"Konak Saat Kulesi"},{"code":36,"name":"Kars","region":"Doğu Anadolu Bölgesi","d":"M934.4,80.0 L935.5,84.9 L936.9,89.8 L938.0,94.7 L940.0,99.4 L940.1,104.6 L940.2,109.7 L940.8,114.8 L941.1,120.0 L945.3,126.8 L949.6,133.7 L954.4,139.3 L957.7,145.9 L952.8,150.8 L944.4,151.1 L936.1,152.0 L927.8,151.1 L919.4,150.5 L911.0,150.6 L902.7,150.3 L894.4,151.0 L886.0,150.8 L883.5,146.1 L880.7,141.6 L878.4,136.8 L876.3,131.8 L874.5,126.8 L873.2,121.7 L871.2,116.7 L869.3,111.7 L872.5,106.3 L880.3,102.9 L887.6,98.7 L895.4,95.5 L903.3,92.8 L910.6,88.5 L918.3,85.0 L926.4,82.6Z","cx":913.0,"cy":121.7,"desc":"19. yüzyıl Rus yapımı caddeleri ve yakınındaki hüzünlü Ortaçağ kenti Ani kalıntılarıyla bir sınır yaylası şehri.","known":["Ani Harabeleri (UNESCO)","Kars gravyeri","Kars Kalesi","Sarıkamış Kayak Merkezi"],"pic":"ani","cap":"Ani Harabeleri"},{"code":37,"name":"Kastamonu","region":"Karadeniz Bölgesi","d":"M372.4,20.2 L373.9,20.6 L382.3,16.1 L391.5,13.7 L397.2,14.6 L403.0,14.4 L408.7,13.9 L414.5,14.4 L421.3,15.7 L428.2,17.1 L435.2,16.9 L442.2,16.4 L442.6,22.8 L443.7,29.1 L445.2,35.3 L447.2,41.3 L450.0,47.1 L452.4,52.9 L455.4,58.6 L457.7,64.6 L450.8,69.6 L443.7,74.5 L437.9,80.8 L433.0,87.9 L425.7,86.7 L418.6,84.7 L411.7,82.2 L404.7,80.0 L397.4,78.7 L390.3,76.7 L383.6,73.8 L376.6,71.4 L375.9,64.4 L374.6,57.4 L371.5,51.1 L369.4,44.3 L370.7,38.4 L371.9,32.4 L372.0,26.3Z","cx":412.5,"cy":48.1,"desc":"İyi korunmuş ahşap konaklı bir dağ kenti, küçük limanlı bir Karadeniz kıyısı ve Anadolu'nun en meşhur sarımsağı.","known":["Taşköprü sarımsağı","Ahşap konaklar","Mahmut Bey Camii (UNESCO)","İnebolu sahili"],"pic":"garlic","cap":"Taşköprü sarımsağı"},{"code":38,"name":"Kayseri","region":"İç Anadolu Bölgesi","d":"M579.4,244.3 L574.4,250.2 L569.9,256.6 L564.5,262.2 L559.3,268.0 L553.6,273.3 L548.5,279.1 L543.1,284.7 L538.2,290.7 L528.6,291.3 L519.1,292.3 L509.8,289.6 L500.3,288.3 L496.1,282.6 L491.7,277.0 L486.3,272.5 L480.5,268.4 L479.7,261.1 L479.1,253.7 L479.1,246.4 L479.1,239.0 L480.3,231.7 L482.4,224.6 L483.7,217.4 L484.7,210.1 L490.5,208.6 L496.4,207.2 L502.4,206.4 L508.3,205.8 L513.5,202.7 L518.9,200.0 L524.4,197.5 L530.0,195.3 L535.1,202.5 L540.8,209.1 L546.5,215.7 L552.5,222.1 L559.2,227.7 L565.4,233.9 L572.6,238.9Z","cx":523.1,"cy":245.1,"desc":"Karlı Erciyes Dağı'nın gölgesinde Selçuklu mimarisi, ticaret mirası ve pastırma ile ünlü bir şehir.","known":["Erciyes Kayak Merkezi","Kayseri mantısı","Pastırma ve sucuk","Kültepe (Kaniş)"],"pic":"kumbet","cap":"Döner Kümbet ve Erciyes"},{"code":39,"name":"Kırklareli","region":"Marmara Bölgesi","d":"M29.8,18.8 L31.0,17.1 L36.0,16.3 L41.0,16.3 L45.9,15.0 L50.7,13.7 L60.4,11.9 L69.4,8.2 L76.2,10.7 L82.8,13.7 L92.1,14.3 L101.5,13.7 L107.9,15.1 L105.8,21.9 L109.5,30.8 L112.2,39.1 L113.2,39.9 L109.7,45.3 L106.3,50.7 L100.1,51.5 L93.9,52.6 L87.7,53.6 L81.5,54.0 L75.3,53.7 L69.0,53.3 L62.8,53.0 L56.5,53.4 L53.9,48.6 L51.4,43.7 L48.1,39.3 L45.0,34.7 L41.4,30.5 L38.0,26.2 L33.8,22.6Z","cx":74.5,"cy":31.3,"desc":"Trakya'nın sakin kuzeyi: sel ormanları (longoz), Karadeniz balıkçı kıyıları ve çok katlı Dupnisa Mağarası.","known":["İğneada longoz ormanları","Dupnisa Mağarası","Kıyıköy","Kırklareli peyniri"],"pic":"floodforest","cap":"İğneada Longozu"},{"code":40,"name":"Kırşehir","region":"İç Anadolu Bölgesi","d":"M464.1,204.5 L458.2,210.3 L452.9,216.7 L446.1,221.6 L439.9,227.1 L433.7,226.4 L427.5,225.3 L421.2,225.2 L415.0,225.7 L408.9,224.3 L402.7,223.4 L396.5,222.4 L390.3,222.0 L386.7,218.6 L390.7,212.6 L395.6,207.2 L399.8,201.3 L403.1,194.8 L407.8,192.7 L412.6,190.8 L417.1,188.3 L421.4,185.5 L425.4,182.2 L429.1,178.6 L432.9,175.1 L437.1,172.1 L440.3,176.3 L443.7,180.3 L447.3,184.2 L451.1,187.9 L454.7,191.7 L458.0,195.9 L460.9,200.4Z","cx":427.0,"cy":204.2,"desc":"13. yüzyıl Ahi teşkilatının merkezi ve Anadolu halk müziğinin yurdu; Neşet Ertaş'ın bağlamasıyla anılır.","known":["Ahi Evran Zaviyesi","Bağlama geleneği","Neşet Ertaş","Kaman Kalehöyük"],"pic":"saz","cap":"Bağlama"},{"code":41,"name":"Kocaeli","region":"Marmara Bölgesi","d":"M201.3,69.3 L211.0,68.6 L217.3,67.3 L223.8,67.5 L224.3,73.6 L224.6,79.7 L225.6,85.8 L226.7,91.9 L226.1,98.0 L225.4,104.1 L224.8,110.2 L223.8,116.3 L217.8,115.3 L211.7,114.7 L205.6,115.2 L199.6,116.3 L196.5,108.5 L191.4,101.9 L194.9,101.5 L201.5,99.8 L208.3,99.4 L211.0,97.3 L205.6,97.2 L200.3,96.7 L194.5,97.6 L188.6,97.2 L187.4,95.1 L190.1,88.3 L194.0,82.0 L197.9,75.8Z","cx":209.3,"cy":92.5,"desc":"İzmit Körfezi'nde Türkiye'nin sanayi kalbi: rafineriler, otomobil fabrikaları ve limanlar; ayrıca Kartepe'nin kayak pistleri ve Hereke ipek halıları.","known":["Otomotiv ve petrokimya","Hereke ipek halıları","Kartepe Kayak Merkezi","İzmit pişmaniyesi"],"pic":"port","cap":"Körfez limanları"},{"code":42,"name":"Konya","region":"İç Anadolu Bölgesi","d":"M336.4,377.6 L334.2,373.1 L332.0,368.7 L329.7,364.3 L327.7,359.7 L325.0,355.5 L322.2,351.4 L319.3,347.4 L316.5,343.3 L313.9,339.0 L311.1,334.9 L308.3,330.8 L305.3,326.9 L302.1,323.0 L298.7,319.4 L295.2,315.9 L291.8,312.2 L290.6,304.0 L289.7,295.6 L289.0,287.3 L288.0,279.0 L289.2,270.7 L290.2,262.4 L290.6,254.0 L291.8,245.7 L297.5,238.2 L302.1,229.9 L305.3,221.0 L309.1,212.4 L318.9,212.0 L328.7,212.1 L338.5,212.0 L348.3,210.9 L357.8,213.0 L367.2,216.0 L376.9,217.5 L386.7,218.6 L390.3,222.0 L392.5,227.1 L394.5,232.4 L396.7,237.6 L398.8,242.8 L400.2,248.3 L401.6,253.7 L402.4,259.3 L403.5,264.8 L406.4,269.6 L409.1,274.5 L412.0,279.3 L415.2,284.0 L417.9,288.8 L420.9,293.6 L424.0,298.3 L427.3,302.8 L427.3,306.8 L422.0,311.7 L416.8,316.8 L412.2,322.4 L407.4,327.9 L402.5,333.3 L397.3,338.3 L391.6,342.9 L386.2,347.8 L379.9,351.3 L373.5,354.7 L367.1,358.2 L360.8,362.0 L354.9,366.1 L348.7,370.0 L342.4,373.6Z","cx":351.2,"cy":285.9,"desc":"Selçuklu başkenti ve Mevlânâ'nın şehri; türbesi ziyaretçi çeker. Aynı zamanda Türkiye'nin yüzölçümü en büyük ili ve geniş bir buğday ovasıdır.","known":["Mevlânâ Müzesi ve Sema","Çatalhöyük (UNESCO)","Etli ekmek","Beyşehir Gölü"],"pic":"dervish","cap":"Semazen"},{"code":43,"name":"Kütahya","region":"Ege Bölgesi","d":"M245.7,196.1 L240.3,201.2 L235.0,206.1 L228.7,210.0 L222.8,214.4 L217.3,219.3 L211.4,223.6 L206.5,229.0 L201.1,234.0 L194.9,230.8 L188.9,227.4 L182.7,224.4 L176.2,221.9 L171.1,217.2 L165.5,213.1 L159.7,209.3 L153.8,205.6 L150.7,198.6 L156.9,193.8 L163.0,188.8 L169.5,184.3 L175.9,179.7 L180.4,173.2 L185.4,167.1 L190.1,160.8 L195.2,154.8 L202.3,155.8 L209.4,155.9 L216.6,156.6 L223.7,157.5 L225.8,162.7 L227.8,167.9 L230.5,172.8 L233.4,177.6 L236.6,182.1 L239.4,186.9 L242.7,191.4Z","cx":200.0,"cy":192.8,"desc":"Renkli el yapımı çinileri ve porselenleriyle ünlü; ayrıca Roma Zeus Tapınağı'nın olağanüstü korunduğu Aizanoi buradadır.","known":["Kütahya çini ve porseleni","Aizanoi Zeus Tapınağı (UNESCO)","Germiyan evleri","Simav kaplıcaları"],"pic":"tileplate","cap":"Kütahya çinisi"},{"code":44,"name":"Malatya","region":"Doğu Anadolu Bölgesi","d":"M648.6,210.7 L653.6,218.6 L658.0,226.8 L662.3,235.0 L666.5,243.3 L671.7,251.0 L677.5,258.3 L683.5,265.5 L688.7,273.2 L679.2,273.7 L669.8,274.5 L660.4,275.6 L650.9,276.1 L641.7,278.5 L632.4,280.4 L623.8,284.3 L614.8,287.6 L613.2,281.8 L612.1,275.9 L609.8,270.2 L607.3,264.7 L604.4,259.5 L601.0,254.5 L597.4,249.7 L593.8,244.9 L600.4,240.2 L606.6,234.9 L613.1,230.0 L619.1,224.4 L626.7,221.4 L633.9,217.7 L641.4,214.5Z","cx":639.0,"cy":253.7,"desc":"Kayısının başkenti: bahçeleri dünyadaki kuru kayısının büyük bölümünü sağlar; Arslantepe Anadolu'nun en eski saray alanlarındandır.","known":["Kuru kayısı","Arslantepe Höyüğü (UNESCO)","Battalgazi"],"pic":"apricot","cap":"Malatya kayısısı"},{"code":45,"name":"Manisa","region":"Ege Bölgesi","d":"M138.3,274.6 L128.7,276.7 L118.8,276.5 L114.4,273.2 L110.0,269.8 L106.0,266.0 L101.8,262.4 L98.0,258.3 L94.4,254.1 L90.8,249.9 L87.0,245.8 L84.2,241.0 L81.4,236.2 L79.1,231.2 L76.9,226.1 L73.5,221.7 L69.9,217.4 L66.9,212.8 L63.9,208.1 L69.2,206.6 L74.4,205.0 L79.6,203.6 L84.8,202.0 L90.2,201.4 L95.6,201.0 L101.0,200.5 L106.4,199.7 L111.8,199.8 L117.2,200.0 L122.6,199.9 L128.1,200.1 L133.4,199.4 L138.8,198.7 L144.2,198.3 L149.6,198.1 L150.7,198.6 L153.8,205.6 L154.4,212.0 L155.0,218.4 L156.0,224.7 L156.4,231.1 L156.0,237.4 L155.8,243.8 L155.1,250.2 L153.8,256.5 L149.3,260.5 L144.9,264.6 L141.1,269.3Z","cx":119.7,"cy":232.6,"desc":"Asırlık Mesir Macunu şenliği, Lidya'nın başkenti Sardes kalıntıları ve güneşte kuruyan çekirdeksiz üzümler.","known":["Mesir Macunu Festivali (UNESCO)","Sardes","Sultaniye üzümü","Spil Dağı"],"pic":"grapes","cap":"Sultaniye üzümü"},{"code":46,"name":"Kahramanmaraş","region":"Akdeniz Bölgesi","d":"M614.8,287.6 L614.7,296.8 L614.0,306.0 L616.4,314.9 L618.2,323.9 L613.1,328.0 L607.6,331.6 L601.9,334.7 L596.0,337.6 L590.2,340.6 L584.6,343.9 L578.7,346.5 L572.7,349.2 L567.3,342.9 L561.7,336.6 L554.7,332.0 L548.1,326.8 L546.0,317.7 L542.3,309.0 L539.9,300.0 L538.2,290.7 L543.1,284.7 L548.5,279.1 L553.6,273.3 L559.3,268.0 L564.5,262.2 L569.9,256.6 L574.4,250.2 L579.4,244.3 L586.6,244.3 L593.8,244.9 L597.4,249.7 L601.0,254.5 L604.4,259.5 L607.3,264.7 L609.8,270.2 L612.1,275.9 L613.2,281.8Z","cx":579.9,"cy":298.1,"desc":"Dövme dondurması ve Maraş pul biberi ile bilinir. Şubat 2023 depremlerinin merkezi oldu ve yeniden yapılanıyor.","known":["Maraş dondurması","Maraş pul biberi","Kahramanmaraş Kalesi","Toros yaylaları"],"pic":"icecream","cap":"Maraş dondurması"},{"code":47,"name":"Mardin","region":"Güneydoğu Anadolu Bölgesi","d":"M846.6,350.9 L843.9,351.0 L835.7,350.6 L827.8,349.0 L819.9,350.7 L811.8,351.7 L805.1,351.6 L798.4,351.4 L791.8,349.9 L785.1,349.6 L777.8,353.5 L770.2,356.8 L763.0,360.8 L755.7,364.7 L754.3,365.3 L754.4,357.3 L755.1,349.3 L754.2,341.3 L752.0,333.5 L757.7,329.8 L763.8,326.7 L769.4,322.7 L775.2,319.1 L781.0,315.4 L786.3,311.2 L791.8,307.2 L797.4,303.2 L801.9,305.9 L806.5,308.3 L811.2,310.7 L816.0,312.7 L821.0,314.2 L825.8,316.4 L831.0,317.2 L836.1,318.3 L841.5,324.7 L845.1,332.3 L846.6,341.5Z","cx":798.6,"cy":333.9,"desc":"Mezopotamya ovasının üstündeki tepede balrengi taştan kurulu şehir; Süryani manastırları ve görkemli medreseleri vardır.","known":["Taş mimari","Deyrulzafaran Manastırı","Midyat telkârisi","Zinciriye Medresesi"],"pic":"mardin","cap":"Mardin taş evleri"},{"code":48,"name":"Muğla","region":"Ege Bölgesi","d":"M194.8,382.3 L194.2,389.6 L193.0,396.7 L194.2,403.9 L195.5,411.0 L194.4,411.3 L188.1,408.7 L181.6,406.5 L178.9,399.9 L175.6,393.6 L171.1,388.1 L166.6,382.5 L160.5,378.4 L154.9,373.6 L146.6,371.3 L138.2,369.4 L129.6,368.8 L121.2,366.8 L115.0,369.1 L108.6,370.9 L102.5,373.6 L96.1,375.7 L89.5,376.3 L82.8,376.9 L76.0,377.2 L69.4,378.4 L61.4,375.7 L67.6,374.0 L73.8,372.5 L79.6,370.0 L85.5,367.4 L90.8,366.5 L96.2,365.7 L101.6,365.0 L106.8,363.3 L114.5,359.1 L122.8,356.5 L113.4,356.7 L104.1,354.4 L98.2,355.6 L92.2,356.5 L86.2,356.2 L80.1,356.5 L73.4,356.7 L66.8,356.5 L69.4,348.3 L76.6,344.5 L82.8,339.3 L82.4,339.2 L89.7,337.4 L97.1,336.3 L104.4,334.6 L111.6,332.4 L118.1,328.6 L124.7,325.1 L131.7,322.2 L138.3,318.7 L143.8,321.3 L149.0,324.4 L154.7,326.4 L160.4,328.6 L164.6,333.0 L169.1,337.0 L173.9,340.7 L178.6,344.6 L181.4,348.9 L184.5,353.1 L186.9,357.7 L189.2,362.4 L190.2,367.5 L191.7,372.4 L193.2,377.4Z","cx":139.3,"cy":357.3,"desc":"Türkiye'nin tatil kıyısı: Bodrum, Marmaris ve Fethiye; çam kokulu koylar, gulet turları ve Likya kaya mezarları.","known":["Bodrum Kalesi","Ölüdeniz","Dalyan ve İztuzu kaplumbağaları","Çam balı"],"pic":"paraglider","cap":"Ölüdeniz"},{"code":49,"name":"Muş","region":"Doğu Anadolu Bölgesi","d":"M874.9,195.2 L878.4,199.9 L881.8,204.7 L877.3,212.7 L872.1,220.4 L866.2,227.5 L861.1,235.2 L856.3,243.1 L850.7,250.4 L846.2,258.5 L842.0,266.7 L836.1,268.8 L828.9,263.9 L821.1,259.8 L812.9,256.6 L804.4,254.3 L803.2,252.5 L804.8,246.7 L806.6,240.9 L807.8,234.9 L809.2,229.0 L811.8,223.5 L813.9,217.7 L815.7,211.9 L818.0,206.3 L825.3,205.4 L832.5,204.4 L839.7,203.4 L846.9,203.1 L853.9,200.8 L860.7,198.3 L867.7,196.4Z","cx":839.8,"cy":229.6,"desc":"Karlı dağların altında geniş verimli bir ova; Anadolu'nun Türklere açılmasını sağlayan Malazgirt Meydan Muharebesi'nin (1071) yeri.","known":["Malazgirt Zaferi (1071)","Muş ovası buğdayı","Murat Nehri"],"pic":"wheat","cap":"Muş Ovası"},{"code":50,"name":"Nevşehir","region":"İç Anadolu Bölgesi","d":"M484.7,210.1 L483.7,217.4 L482.4,224.6 L480.3,231.7 L479.1,239.0 L479.1,246.4 L479.1,253.7 L479.7,261.1 L480.5,268.4 L475.1,267.9 L469.7,268.1 L464.3,268.8 L458.9,268.4 L456.7,263.2 L454.4,258.0 L452.3,252.7 L449.7,247.7 L446.9,242.7 L444.0,237.8 L441.7,232.5 L439.9,227.1 L446.1,221.6 L452.9,216.7 L458.2,210.3 L464.1,204.5 L469.2,206.1 L474.3,207.6 L479.6,208.5Z","cx":465.6,"cy":236.4,"desc":"Kapadokya'nın kalbi: peri bacaları, kaya kiliseleri, yeraltı şehirleri ve gün doğumunda sıcak hava balonları.","known":["Göreme Açık Hava Müzesi (UNESCO)","Sıcak hava balonları","Derinkuyu yeraltı şehri","Avanos çömlekçiliği"],"pic":"cappadocia","cap":"Kapadokya"},{"code":51,"name":"Niğde","region":"İç Anadolu Bölgesi","d":"M480.5,268.4 L486.3,272.5 L491.7,277.0 L496.1,282.6 L500.3,288.3 L496.6,294.0 L492.8,299.7 L489.0,305.3 L485.0,310.9 L480.4,315.9 L476.1,321.2 L471.0,325.8 L466.3,330.7 L462.1,328.0 L458.0,325.1 L453.7,322.5 L449.5,319.8 L444.7,318.3 L440.1,316.5 L435.5,314.4 L431.0,312.4 L427.3,306.8 L427.3,302.8 L431.0,298.3 L434.9,293.9 L438.7,289.5 L442.3,284.9 L446.7,281.0 L450.8,276.8 L454.8,272.7 L458.9,268.4 L464.3,268.8 L469.7,268.1 L475.1,267.9Z","cx":463.7,"cy":297.2,"desc":"Karlı Aladağlar zirveleri, Selçuklu ve Osmanlı camileri ile elması ve patatesiyle ünlü tarlalar.","known":["Aladağlar Milli Parkı","Niğde elması ve patatesi","Gümüşler Manastırı","Niğde Kalesi"],"pic":"apple","cap":"Niğde elması"},{"code":52,"name":"Ordu","region":"Karadeniz Bölgesi","d":"M587.4,67.7 L594.6,71.5 L602.5,73.4 L608.7,76.2 L614.2,80.2 L621.3,78.2 L628.6,77.5 L634.5,83.6 L643.3,85.4 L652.3,86.4 L649.8,91.7 L648.0,97.2 L646.5,102.8 L645.0,108.4 L642.3,113.5 L639.4,118.6 L636.9,123.8 L634.1,128.9 L628.5,127.0 L623.2,124.6 L617.6,123.0 L612.1,121.1 L608.2,116.0 L603.9,111.2 L600.4,105.8 L597.4,100.1 L593.7,94.9 L589.5,90.0 L586.1,84.6 L582.4,79.4 L584.3,73.3Z","cx":618.1,"cy":96.9,"desc":"Fındık ülkesi: denize inen teraslı bahçeler ve Boztepe'nin panoramik manzarasına çıkan teleferik.","known":["Fındık","Boztepe teleferiği","Ünye sahili","Çambaşı Yaylası"],"pic":"cablecar","cap":"Boztepe Teleferiği"},{"code":53,"name":"Rize","region":"Karadeniz Bölgesi","d":"M769.7,82.7 L774.4,80.9 L780.1,78.9 L785.7,76.5 L790.6,73.0 L795.8,69.9 L803.9,64.4 L812.8,60.3 L814.8,69.4 L816.5,78.6 L819.8,87.4 L822.0,96.4 L813.3,100.4 L804.2,103.4 L795.5,107.3 L786.4,110.3 L779.4,105.0 L771.8,100.6 L771.6,91.6Z","cx":796.4,"cy":87.7,"desc":"Çayın başkenti: zümrüt teraslı yamaçlar, Fırtına Vadisi'nin taş köprüleri ve Kaçkarlar'ın altında sisli yaylalar.","known":["Çay bahçeleri","Ayder Yaylası","Fırtına Vadisi köprüleri","Zil Kale"],"pic":"tea","cap":"Rize çayı"},{"code":54,"name":"Sakarya","region":"Marmara Bölgesi","d":"M223.8,67.5 L227.0,67.2 L232.8,69.7 L238.7,72.3 L244.9,73.7 L251.0,75.4 L260.5,75.4 L260.1,81.2 L259.2,87.0 L259.2,92.8 L259.0,98.6 L259.1,104.5 L259.3,110.3 L260.2,116.0 L260.5,121.9 L252.5,124.8 L244.1,125.8 L239.2,122.9 L234.6,119.6 L229.3,117.5 L223.8,116.3 L224.8,110.2 L225.4,104.1 L226.1,98.0 L226.7,91.9 L225.6,85.8 L224.6,79.7 L224.3,73.6Z","cx":241.9,"cy":97.1,"desc":"İstanbul ile Karadeniz arasında yeşil bir kapı: Sapanca Gölü, Karasu plajları ve Taraklı'nın eski Osmanlı evleri.","known":["Sapanca Gölü","Taraklı evleri","Karasu plajı","Kuzuluk kaplıcaları"],"pic":"lakepier","cap":"Sapanca Gölü"},{"code":55,"name":"Samsun","region":"Karadeniz Bölgesi","d":"M504.1,30.6 L508.1,33.9 L512.7,36.3 L522.2,35.6 L531.4,32.9 L536.5,39.0 L542.1,44.6 L545.0,53.7 L550.1,61.7 L555.4,59.7 L560.8,58.2 L566.2,56.8 L571.5,54.8 L577.9,61.9 L585.9,67.2 L587.4,67.7 L584.3,73.3 L582.4,79.4 L577.7,81.6 L572.9,83.4 L567.9,84.8 L563.1,86.5 L558.4,88.7 L553.7,90.8 L549.5,93.8 L545.2,96.8 L537.6,94.4 L530.1,91.4 L522.9,87.9 L516.1,83.6 L508.7,80.5 L501.6,76.9 L494.8,72.7 L487.7,69.1 L484.0,65.4 L486.4,61.0 L488.5,56.4 L491.3,52.2 L494.3,48.1 L497.1,44.0 L499.8,39.7 L502.0,35.2Z","cx":533.1,"cy":64.9,"desc":"Atatürk'ün 19 Mayıs 1919'da Kurtuluş Savaşı'nı başlatmak için çıktığı Karadeniz limanı; zengin bir kuş cennetine sahip nehir deltası.","known":["19 Mayıs 1919","Kızılırmak Deltası kuşları","Bandırma Vapuru Müzesi","Samsun pidesi"],"pic":"ship","cap":"Bandırma Vapuru"},{"code":56,"name":"Siirt","region":"Güneydoğu Anadolu Bölgesi","d":"M842.0,266.7 L849.9,270.0 L858.2,272.5 L866.3,275.3 L874.5,277.8 L881.6,282.6 L888.9,287.1 L896.2,291.7 L903.8,295.6 L895.8,299.0 L887.8,302.5 L880.1,306.6 L872.3,310.4 L865.6,316.0 L858.3,320.9 L851.8,326.8 L845.1,332.3 L841.5,324.7 L836.1,318.3 L835.6,312.1 L835.7,305.9 L835.7,299.7 L836.3,293.6 L836.5,287.4 L836.5,281.2 L836.6,275.0 L836.1,268.8Z","cx":859.5,"cy":298.2,"desc":"Fıstık ağaçlarıyla kaplı tepeler, ünlü büryan kebabı ve Siirt battaniyesi.","known":["Siirt fıstığı","Büryan","Siirt battaniyesi","Veysel Karani Türbesi"],"pic":"pistachio","cap":"Siirt fıstığı"},{"code":57,"name":"Sinop","region":"Karadeniz Bölgesi","d":"M442.2,16.4 L443.3,16.5 L448.6,17.7 L453.9,18.4 L459.3,18.5 L464.7,19.2 L473.1,14.3 L480.7,8.2 L488.7,11.7 L490.6,18.1 L494.0,24.0 L498.9,27.6 L504.1,30.6 L502.0,35.2 L499.8,39.7 L497.1,44.0 L494.3,48.1 L491.3,52.2 L488.5,56.4 L486.4,61.0 L484.0,65.4 L477.4,64.8 L470.9,63.9 L464.3,64.7 L457.7,64.6 L455.4,58.6 L452.4,52.9 L450.0,47.1 L447.2,41.3 L445.2,35.3 L443.7,29.1 L442.6,22.8Z","cx":473.0,"cy":37.5,"desc":"Rüzgârlı bir yarımada ve Anadolu'nun en kuzey noktası; eski kale cezaevi, surlu bir liman ve fiyort görünümlü Hamsilos Koyu.","known":["İnceburun (en kuzey nokta)","Hamsilos Koyu","Sinop Tarihi Cezaevi","Erfelek Şelaleleri"],"pic":"lighthouse","cap":"Sinop Feneri"},{"code":58,"name":"Sivas","region":"İç Anadolu Bölgesi","d":"M634.1,128.9 L636.7,133.8 L639.0,138.8 L642.2,143.4 L645.5,147.8 L648.9,152.2 L652.3,156.6 L656.2,160.5 L660.1,164.4 L660.9,170.9 L661.3,177.5 L660.8,184.0 L661.5,190.6 L658.7,195.9 L655.3,200.8 L651.6,205.5 L648.6,210.7 L641.4,214.5 L633.9,217.7 L626.7,221.4 L619.1,224.4 L613.1,230.0 L606.6,234.9 L600.4,240.2 L593.8,244.9 L586.6,244.3 L579.4,244.3 L572.6,238.9 L565.4,233.9 L559.2,227.7 L552.5,222.1 L546.5,215.7 L540.8,209.1 L535.1,202.5 L530.0,195.3 L529.4,187.1 L529.8,178.9 L531.4,170.7 L532.2,162.5 L537.4,160.1 L542.7,158.0 L548.0,156.0 L553.4,154.3 L558.8,152.5 L564.2,150.6 L569.7,149.0 L575.2,147.6 L579.3,143.7 L583.7,140.0 L588.3,136.7 L592.7,133.1 L597.7,130.3 L602.7,127.5 L607.3,124.2 L612.1,121.1 L617.6,123.0 L623.2,124.6 L628.5,127.0Z","cx":597.6,"cy":182.7,"desc":"Kızılırmak üzerinde Selçuklu dönemi şehri; 1919 Sivas Kongresi kurtuluş hareketini şekillendirdi, Divriği Ulu Camii ise bir şaheserdir.","known":["Divriği Ulu Camii (UNESCO)","Sivas Kongresi (1919)","Kangal köpeği","Balıklı Kaplıca"],"pic":"kangal","cap":"Kangal köpeği"},{"code":59,"name":"Tekirdağ","region":"Marmara Bölgesi","d":"M106.3,50.7 L107.6,58.6 L108.6,66.6 L108.0,74.7 L108.7,82.8 L104.1,84.3 L98.3,84.0 L92.4,84.3 L86.5,84.2 L80.6,83.6 L74.3,91.0 L69.4,99.4 L62.3,104.8 L56.1,111.1 L54.4,111.7 L51.3,107.3 L47.4,103.5 L43.2,100.2 L39.2,96.6 L41.5,91.2 L44.1,86.0 L46.6,80.7 L48.7,75.3 L51.4,70.2 L53.5,64.7 L54.8,59.0 L56.5,53.4 L62.8,53.0 L69.0,53.3 L75.3,53.7 L81.5,54.0 L87.7,53.6 L93.9,52.6 L100.1,51.5Z","cx":73.3,"cy":75.8,"desc":"Ayçiçeği tarlaları ve Şarköy-Mürefte bağları ile bir Trakya kıyı ili; köftesi ve rakısıyla ünlüdür.","known":["Tekirdağ köftesi","Tekirdağ rakısı","Ayçiçeği tarlaları","Rakoczi Müzesi"],"pic":"sunflower","cap":"Ayçiçeği tarlaları"},{"code":60,"name":"Tokat","region":"Karadeniz Bölgesi","d":"M582.4,79.4 L586.1,84.6 L589.5,90.0 L593.7,94.9 L597.4,100.1 L600.4,105.8 L603.9,111.2 L608.2,116.0 L612.1,121.1 L607.3,124.2 L602.7,127.5 L597.7,130.3 L592.7,133.1 L588.3,136.7 L583.7,140.0 L579.3,143.7 L575.2,147.6 L569.7,149.0 L564.2,150.6 L558.8,152.5 L553.4,154.3 L548.0,156.0 L542.7,158.0 L537.4,160.1 L532.2,162.5 L529.9,158.0 L528.3,153.0 L526.2,148.4 L524.2,143.6 L526.5,137.6 L529.4,131.8 L531.1,125.6 L532.8,119.4 L536.3,113.9 L539.9,108.5 L542.9,102.8 L545.2,96.8 L549.5,93.8 L553.7,90.8 L558.4,88.7 L563.1,86.5 L567.9,84.8 L572.9,83.4 L577.7,81.6Z","cx":564.7,"cy":120.0,"desc":"Selçuklu ve Osmanlı eserleriyle tarihî bir kavşak; el baskısı yazması ve patlıcanlı Tokat kebabıyla bilinir.","known":["Tokat kebabı","Tokat yazması","Ballıca Mağarası","Niksar Danişmend mirası"],"pic":"printblock","cap":"Tokat yazması"},{"code":61,"name":"Trabzon","region":"Karadeniz Bölgesi","d":"M685.3,82.3 L694.3,80.2 L704.0,80.8 L713.6,79.7 L723.1,81.4 L732.8,82.3 L738.2,82.9 L743.4,84.2 L748.3,86.6 L753.1,89.1 L761.8,87.0 L769.7,82.7 L771.6,91.6 L771.8,100.6 L766.2,105.9 L759.7,110.1 L753.2,114.3 L746.1,117.3 L738.8,114.4 L731.4,112.2 L723.9,110.0 L716.5,107.6 L709.6,104.2 L702.5,101.0 L695.7,97.1 L689.0,93.1 L687.1,87.7Z","cx":731.8,"cy":95.6,"desc":"Karadeniz'in köklü limanı; Sümela Manastırı'nın kayalıklar üstündeki görüntüsü ve Trabzonspor tutkusu.","known":["Sümela Manastırı","Uzungöl","Hamsi yemekleri","Trabzonspor"],"pic":"sumela","cap":"Sümela Manastırı"},{"code":62,"name":"Tunceli","region":"Doğu Anadolu Bölgesi","d":"M757.2,191.8 L756.2,197.4 L755.4,202.9 L754.7,208.6 L753.6,214.1 L753.0,219.7 L752.1,225.3 L751.7,230.9 L752.0,236.6 L745.8,239.8 L739.5,242.7 L735.5,238.8 L731.2,235.0 L726.9,231.4 L722.5,227.9 L718.3,224.1 L714.2,220.1 L710.3,216.1 L706.4,212.0 L701.3,209.6 L696.1,207.3 L691.0,204.9 L685.7,202.9 L680.8,200.0 L676.0,197.1 L671.0,194.4 L666.0,191.8 L671.6,190.6 L677.2,189.3 L682.9,188.2 L688.5,186.9 L694.3,186.9 L700.1,186.7 L705.8,186.3 L711.6,186.0 L717.3,186.6 L723.0,187.1 L728.7,187.8 L734.4,188.3 L740.2,188.8 L745.9,189.4 L751.6,190.5Z","cx":723.8,"cy":210.3,"desc":"Dersim: nehirleri ve Munzur kaynaklarıyla vahşi bir dağ ili; kendine özgü Alevi kültürü ve Türkiye'nin en güzel milli parklarından biri.","known":["Munzur Vadisi Milli Parkı","Munzur Gözeleri","Dersim Alevi kültürü","Pülümür vadisi"],"pic":"river","cap":"Munzur Vadisi"},{"code":63,"name":"Şanlıurfa","region":"Güneydoğu Anadolu Bölgesi","d":"M754.3,365.3 L747.0,367.5 L739.7,369.7 L733.2,373.8 L726.4,377.0 L717.7,376.1 L708.9,376.2 L700.4,378.0 L691.6,378.4 L684.2,374.9 L676.5,371.8 L669.6,367.2 L662.3,363.3 L657.2,364.7 L652.1,365.4 L647.0,366.8 L641.9,367.9 L642.0,361.0 L641.6,354.2 L639.8,347.5 L637.6,341.0 L641.1,336.8 L644.4,332.4 L647.7,328.1 L651.3,324.0 L655.3,320.3 L659.3,316.6 L663.3,312.9 L667.1,309.0 L671.4,305.7 L675.5,302.1 L679.9,299.0 L684.2,295.6 L688.5,292.3 L692.8,289.0 L697.2,285.8 L701.7,282.7 L708.9,283.1 L713.5,290.1 L718.1,297.1 L722.9,303.9 L727.4,311.0 L733.4,316.8 L739.0,323.1 L745.4,328.4 L752.0,333.5 L754.2,341.3 L755.1,349.3 L754.4,357.3Z","cx":699.6,"cy":338.3,"desc":"Peygamberler şehri; dünyanın bilinen en eski anıtsal tapınak kompleksi Göbeklitepe ve Balıklıgöl'ün kutsal sazanlı havuzları.","known":["Göbeklitepe (UNESCO)","Balıklıgöl","Harran kümbet evleri","Çiğ köfte ve isot"],"pic":"gobekli","cap":"Göbeklitepe"},{"code":64,"name":"Uşak","region":"Ege Bölgesi","d":"M201.1,234.0 L203.2,241.9 L204.3,250.1 L205.3,258.2 L204.9,266.4 L198.5,265.0 L192.0,263.9 L185.8,261.9 L179.8,259.2 L173.3,258.9 L166.7,258.4 L160.3,257.4 L153.8,256.5 L155.1,250.2 L155.8,243.8 L156.0,237.4 L156.4,231.1 L156.0,224.7 L155.0,218.4 L154.4,212.0 L153.8,205.6 L159.7,209.3 L165.5,213.1 L171.1,217.2 L176.2,221.9 L182.7,224.4 L188.9,227.4 L194.9,230.8Z","cx":176.4,"cy":240.2,"desc":"Halı ve tekstil kenti; kanyonlarla yarılmış bir kırsal ve New York'tan geri getirilen Lidya hazinesini saklayan müze.","known":["Uşak halıları","Ulubey Kanyonu","Karun Hazinesi","Battaniye ve tekstil"],"pic":"carpet","cap":"Uşak halısı"},{"code":65,"name":"Van","region":"Doğu Anadolu Bölgesi","d":"M985.1,201.3 L981.7,209.1 L982.6,215.0 L982.5,221.1 L982.1,227.1 L982.7,233.1 L981.0,240.7 L979.9,248.4 L980.7,256.2 L981.7,263.9 L980.6,269.1 L980.4,274.4 L978.5,279.3 L977.4,284.5 L980.8,289.2 L984.5,293.6 L977.1,295.2 L969.6,296.0 L962.3,298.0 L955.0,299.8 L948.1,303.0 L941.4,306.6 L934.3,309.1 L927.2,311.5 L920.7,308.7 L914.9,305.0 L909.8,300.2 L904.6,295.6 L904.3,290.2 L903.8,285.0 L903.8,279.7 L903.9,274.3 L902.9,269.1 L901.7,264.0 L901.2,258.7 L900.4,253.4 L899.7,248.1 L899.2,242.8 L899.0,237.5 L899.2,232.2 L898.2,227.0 L897.4,221.7 L896.0,216.6 L894.8,211.4 L904.3,211.0 L913.8,209.7 L923.2,208.6 L932.8,208.1 L941.8,205.0 L951.1,202.7 L960.1,199.7 L968.8,195.7 L976.9,198.5Z","cx":941.3,"cy":251.5,"desc":"Dağlar ve geniş bir sodalı göl; Akdamar Adası'ndaki 10. yüzyıl Ermeni kilisesi, Van Kalesi ve farklı renk gözlü Van kedisi.","known":["Van Gölü","Akdamar Adası","Van kedisi","Van kahvaltısı"],"pic":"akdamar","cap":"Akdamar Kilisesi"},{"code":66,"name":"Yozgat","region":"İç Anadolu Bölgesi","d":"M507.5,136.0 L515.4,140.7 L524.2,143.6 L526.2,148.4 L528.3,153.0 L529.9,158.0 L532.2,162.5 L531.4,170.7 L529.8,178.9 L529.4,187.1 L530.0,195.3 L524.4,197.5 L518.9,200.0 L513.5,202.7 L508.3,205.8 L502.4,206.4 L496.4,207.2 L490.5,208.6 L484.7,210.1 L479.6,208.5 L474.3,207.6 L469.2,206.1 L464.1,204.5 L460.9,200.4 L458.0,195.9 L454.7,191.7 L451.1,187.9 L447.3,184.2 L443.7,180.3 L440.3,176.3 L437.1,172.1 L436.7,166.0 L436.6,159.8 L437.6,153.7 L438.1,147.6 L446.9,147.2 L455.7,146.1 L464.5,145.7 L473.3,145.2 L481.9,143.0 L490.3,140.2 L499.0,138.5Z","cx":486.9,"cy":171.5,"desc":"Ondüle tepeler ve çam korularıyla bir bozkır ili; Osmanlı barok camisi ve Sarıkaya'daki Roma hamamları.","known":["Çamlık Milli Parkı","Sarıkaya Roma Hamamı","Çapanoğlu Camii","Yozgat testi kebabı"],"pic":"pot","cap":"Testi kebabı"},{"code":67,"name":"Zonguldak","region":"Karadeniz Bölgesi","d":"M286.5,65.7 L289.5,63.1 L293.9,60.5 L298.2,57.8 L302.4,54.9 L307.1,52.8 L311.9,48.6 L317.1,44.9 L322.9,42.1 L328.5,39.1 L332.5,36.4 L337.4,44.4 L340.7,53.1 L337.6,60.2 L335.3,67.6 L333.7,75.1 L333.1,82.8 L327.7,81.4 L322.3,79.7 L317.0,78.1 L311.5,77.0 L306.2,75.0 L301.0,72.8 L295.6,71.5 L290.1,70.0Z","cx":319.1,"cy":61.7,"desc":"Ülkenin kömür madeni kıyısı: derin ocaklar, komşusu Ereğli'de demir-çelik ve Filyos'taki Hadrianopolis kalıntıları.","known":["Taşkömürü madenciliği","Gökgöl Mağarası","Filyos ve Hadrianopolis","Ereğli Demir Çelik"],"pic":"mine","cap":"Taşkömürü ocakları"},{"code":68,"name":"Aksaray","region":"İç Anadolu Bölgesi","d":"M427.3,302.8 L424.0,298.3 L420.9,293.6 L417.9,288.8 L415.2,284.0 L412.0,279.3 L409.1,274.5 L406.4,269.6 L403.5,264.8 L402.4,259.3 L401.6,253.7 L400.2,248.3 L398.8,242.8 L396.7,237.6 L394.5,232.4 L392.5,227.1 L390.3,222.0 L396.5,222.4 L402.7,223.4 L408.9,224.3 L415.0,225.7 L421.2,225.2 L427.5,225.3 L433.7,226.4 L439.9,227.1 L441.7,232.5 L444.0,237.8 L446.9,242.7 L449.7,247.7 L452.3,252.7 L454.4,258.0 L456.7,263.2 L458.9,268.4 L454.8,272.7 L450.8,276.8 L446.7,281.0 L442.3,284.9 L438.7,289.5 L434.9,293.9 L431.0,298.3Z","cx":426.9,"cy":255.9,"desc":"Volkanik Hasan Dağı'nın altında Ihlara Vadisi'nin kayaya oyulmuş kiliseleri, eski İpek Yolu üzerinde.","known":["Ihlara Vadisi","Hasan Dağı","Sultanhanı Kervansarayı","Aksaray Malaklısı"],"pic":"caravanserai","cap":"Sultanhanı Kervansarayı"},{"code":69,"name":"Bayburt","region":"Karadeniz Bölgesi","d":"M771.8,100.6 L779.4,105.0 L786.4,110.3 L784.5,117.0 L782.2,123.6 L780.0,130.2 L777.6,136.8 L774.5,143.0 L771.7,149.5 L769.6,156.1 L768.0,162.9 L761.8,156.1 L754.8,150.1 L750.3,142.1 L744.7,134.7 L744.5,126.0 L746.1,117.3 L753.2,114.3 L759.7,110.1 L766.2,105.9Z","cx":764.9,"cy":127.9,"desc":"Tepe üstünde bir kalesi ve Baksı köyünde modern bir sanat müzesi olan küçük, yüksek bir il.","known":["Bayburt Kalesi","Baksı Müzesi","Kop Dağı Geçidi","Bayburt taşı"],"pic":"castle","cap":"Bayburt Kalesi"},{"code":70,"name":"Karaman","region":"İç Anadolu Bölgesi","d":"M431.0,312.4 L426.6,319.1 L421.8,325.5 L416.8,331.7 L411.6,337.8 L407.7,344.8 L403.7,351.7 L399.5,358.5 L395.3,365.3 L391.3,372.2 L386.7,378.8 L381.9,385.1 L376.7,391.2 L372.8,398.2 L369.1,405.3 L365.4,412.4 L362.1,419.7 L356.9,415.7 L351.3,412.1 L345.1,409.9 L338.9,407.8 L337.0,400.4 L336.2,392.8 L336.2,385.2 L336.4,377.6 L342.4,373.6 L348.7,370.0 L354.9,366.1 L360.8,362.0 L367.1,358.2 L373.5,354.7 L379.9,351.3 L386.2,347.8 L391.6,342.9 L397.3,338.3 L402.5,333.3 L407.4,327.9 L412.2,322.4 L416.8,316.8 L422.0,311.7 L427.3,306.8Z","cx":375.9,"cy":368.8,"desc":"Karamanoğlu Mehmet Bey'in 1277'de Türkçeyi resmî dil ilan ettiği yer; Yunus Emre'ye atfedilen türbe ve Binbirkilise kalıntıları.","known":["Türkçe resmî dil (1277)","Binbirkilise","Yunus Emre Türbesi","Taşkale mağaraları"],"pic":"basilica","cap":"Binbirkilise"},{"code":71,"name":"Kırıkkale","region":"İç Anadolu Bölgesi","d":"M403.1,194.8 L402.2,186.6 L401.7,178.4 L401.4,170.2 L400.7,162.0 L401.6,153.8 L401.6,145.5 L402.4,137.3 L403.1,129.1 L409.2,128.9 L415.3,129.1 L421.4,128.6 L427.5,129.1 L429.8,134.0 L432.4,138.6 L435.6,142.8 L438.1,147.6 L437.6,153.7 L436.6,159.8 L436.7,166.0 L437.1,172.1 L432.9,175.1 L429.1,178.6 L425.4,182.2 L421.4,185.5 L417.1,188.3 L412.6,190.8 L407.8,192.7Z","cx":418.4,"cy":157.7,"desc":"Kızılırmak üzerinde genç bir sanayi kenti; büyük bir rafineri ve uzun yıllardır çalışan silah-makine fabrikası.","known":["Tüpraş rafinerisi","MKE silah fabrikası","Kızılırmak vadisi"],"pic":"refinery","cap":"Kırıkkale rafinerisi"},{"code":72,"name":"Batman","region":"Güneydoğu Anadolu Bölgesi","d":"M836.1,318.3 L831.0,317.2 L825.8,316.4 L821.0,314.2 L816.0,312.7 L811.2,310.7 L806.5,308.3 L801.9,305.9 L797.4,303.2 L797.9,297.1 L798.8,290.9 L799.7,284.8 L801.2,278.8 L802.5,272.8 L803.7,266.7 L804.0,260.5 L804.4,254.3 L812.9,256.6 L821.1,259.8 L828.9,263.9 L836.1,268.8 L836.6,275.0 L836.5,281.2 L836.5,287.4 L836.3,293.6 L835.7,299.7 L835.7,305.9 L835.6,312.1Z","cx":818.3,"cy":286.9,"desc":"Türkiye'nin petrol ülkesi, rafinerisi Dicle kıyısında; eski Hasankeyf kasabası büyük ölçüde Ilısu Barajı gölü altında.","known":["Raman petrol sahası","Hasankeyf","Batman rafinerisi","Dicle Nehri"],"pic":"oilpump","cap":"Batman petrolü"},{"code":73,"name":"Şırnak","region":"Güneydoğu Anadolu Bölgesi","d":"M930.1,343.5 L926.6,344.8 L921.2,340.8 L915.0,337.9 L909.0,334.7 L902.6,332.5 L895.9,336.7 L889.1,340.7 L882.8,345.6 L875.9,349.6 L868.6,351.0 L861.3,351.8 L854.0,351.0 L846.6,350.9 L846.6,341.5 L845.1,332.3 L851.8,326.8 L858.3,320.9 L865.6,316.0 L872.3,310.4 L880.1,306.6 L887.8,302.5 L895.8,299.0 L903.8,295.6 L904.6,295.6 L909.8,300.2 L914.9,305.0 L920.7,308.7 L927.2,311.5 L928.4,319.5 L928.6,327.5 L929.4,335.5Z","cx":889.9,"cy":326.3,"desc":"Irak sınırında engebeli dağlar; Nuh'un Gemisi'nin geleneksel durağı Cudi Dağı ve Cizre'de Dicle.","known":["Cudi Dağı","Cizre ve Dicle","Zeynel Bey Türbesi"],"pic":"ark","cap":"Cudi Dağı"},{"code":74,"name":"Bartın","region":"Karadeniz Bölgesi","d":"M332.5,36.4 L336.3,33.2 L340.8,30.8 L345.3,27.4 L349.7,23.8 L354.5,20.8 L358.9,17.1 L365.4,19.6 L372.4,20.2 L372.0,26.3 L371.9,32.4 L370.7,38.4 L369.4,44.3 L362.3,46.9 L355.4,49.7 L347.9,50.9 L340.7,53.1 L337.4,44.4Z","cx":354.3,"cy":35.3,"desc":"Amasra çevresinde küçük ve yemyeşil bir kıyı; iki koylu, Bizans-Ceneviz kaleli bir liman kasabası.","known":["Amasra Kalesi ve iki liman","Bartın Irmağı","Kurucaşile kıyıları","Ahşap Osmanlı evleri"],"pic":"harbor","cap":"Amasra"},{"code":75,"name":"Ardahan","region":"Doğu Anadolu Bölgesi","d":"M876.4,45.4 L882.2,43.5 L887.7,41.1 L893.9,42.3 L899.9,44.6 L906.3,51.7 L913.3,58.3 L918.9,64.9 L924.0,72.0 L933.1,75.4 L934.4,80.0 L926.4,82.6 L918.3,85.0 L910.6,88.5 L903.3,92.8 L895.4,95.5 L887.6,98.7 L880.3,102.9 L872.5,106.3 L873.6,98.6 L874.1,90.9 L876.0,83.5 L877.8,76.0 L877.5,68.4 L877.8,60.7 L877.4,53.0Z","cx":896.0,"cy":72.8,"desc":"Kışın donan, Gürcistan sınırında bir yayla; buzu üstünde kızak gezileri yapılan Çıldır Gölü ve yabani yayla çayırları.","known":["Çıldır Gölü","Ardahan Kalesi","Posof ve Kura Nehri","Yayla çayırları"],"pic":"frozenlake","cap":"Çıldır Gölü"},{"code":76,"name":"Iğdır","region":"Doğu Anadolu Bölgesi","d":"M957.7,145.9 L958.7,147.4 L965.2,149.7 L972.0,150.8 L978.7,151.7 L985.4,152.2 L991.6,158.3 L996.1,165.9 L1001.3,169.7 L1005.2,174.8 L1001.7,178.5 L998.9,182.7 L995.1,185.9 L990.7,188.5 L988.7,195.3 L985.1,201.3 L976.9,198.5 L968.8,195.7 L967.4,189.8 L965.6,184.1 L964.3,178.3 L963.4,172.3 L960.7,167.0 L958.1,161.6 L955.2,156.3 L952.8,150.8Z","cx":977.5,"cy":172.2,"desc":"Ağrı Dağı'nın kuzey yüzü altında sıcak bir vadi; Aras Nehri tarımı ve Tuzluca'daki eski tuz madenleri.","known":["Ağrı Dağı manzarası","Aras vadisi kayısısı","Tuzluca tuz mağaraları","Nuh'un Gemisi efsanesi"],"pic":"ararat2","cap":"Ağrı Dağı ve Aras vadisi"},{"code":77,"name":"Yalova","region":"Marmara Bölgesi","d":"M199.6,116.3 L193.2,122.5 L187.3,118.2 L181.4,114.0 L175.1,110.2 L168.9,106.4 L174.6,105.6 L179.5,104.5 L184.3,102.8 L191.4,101.9 L188.6,97.2 L184.3,97.3 L175.6,94.2 L181.5,95.3 L187.4,95.1 L190.0,100.7 L193.4,105.8 L196.9,110.8Z","cx":186.7,"cy":110.1,"desc":"Termal kaynaklar, çınar ormanları ve Marmara'nın karşısında İstanbul'a bakan plajlarıyla küçük bir il.","known":["Termal kaplıcalar","Atatürk Köşkü","Çınarcık plajları","Kurşunlu Şelalesi"],"pic":"hamam","cap":"Termal kaplıcalar"},{"code":78,"name":"Karabük","region":"Karadeniz Bölgesi","d":"M369.4,44.3 L371.5,51.1 L374.6,57.4 L375.9,64.4 L376.6,71.4 L370.5,77.0 L365.0,83.2 L360.9,90.3 L356.3,97.3 L349.9,98.7 L343.3,98.8 L338.3,90.8 L333.1,82.8 L333.7,75.1 L335.3,67.6 L337.6,60.2 L340.7,53.1 L347.9,50.9 L355.4,49.7 L362.3,46.9Z","cx":354.4,"cy":71.5,"desc":"Safranbolu'nun UNESCO listesindeki Osmanlı kenti buradadır; Türkiye'nin ilk entegre demir-çelik tesisi de.","known":["Safranbolu (UNESCO)","Kardemir","Safranbolu lokumu","Yenice Ormanları"],"pic":"safranbolu","cap":"Safranbolu evleri"},{"code":79,"name":"Kilis","region":"Güneydoğu Anadolu Bölgesi","d":"M572.1,355.4 L577.9,362.4 L584.6,368.8 L591.2,375.2 L598.8,380.4 L598.2,380.5 L588.6,380.9 L579.5,383.9 L575.3,386.6 L570.2,378.6 L564.2,371.2 L569.0,363.7Z","cx":578.6,"cy":372.9,"desc":"Zeytinlikleri ve taş evleriyle bir sınır kenti; ünlü yerel zeytinyağı ve Kilis tava gibi yemekleri.","known":["Kilis zeytinyağı","Kilis tava","Ravanda Kalesi","Oylum Höyük"],"pic":"olive","cap":"Kilis zeytinyağı"},{"code":80,"name":"Osmaniye","region":"Akdeniz Bölgesi","d":"M544.3,373.2 L544.8,370.2 L542.1,364.7 L536.8,364.3 L531.4,364.7 L527.8,368.9 L523.2,372.2 L525.9,366.3 L528.6,360.4 L531.8,354.8 L535.3,349.3 L538.5,343.7 L541.6,338.0 L544.8,332.4 L548.1,326.8 L554.7,332.0 L561.7,336.6 L567.3,342.9 L572.7,349.2 L572.1,355.4 L569.0,363.7 L564.2,371.2 L559.3,372.6 L554.3,373.2 L549.3,372.8Z","cx":551.6,"cy":353.4,"desc":"Karatepe-Aslantaş'taki Hitit aslanları, Hierapolis-Kastabala kalıntıları ve yer fıstığı tarlaları.","known":["Karatepe-Aslantaş","Hierapolis-Kastabala","Yer fıstığı","Zorkun Yaylası"],"pic":"peanut","cap":"Yer fıstığı"},{"code":81,"name":"Düzce","region":"Karadeniz Bölgesi","d":"M260.5,75.4 L267.8,74.6 L275.1,75.4 L280.2,69.9 L286.5,65.7 L290.1,70.0 L287.1,76.5 L284.7,83.3 L281.3,89.7 L278.4,96.3 L276.3,103.2 L274.5,110.2 L272.3,117.0 L269.5,123.7 L260.5,121.9 L260.2,116.0 L259.3,110.3 L259.1,104.5 L259.0,98.6 L259.2,92.8 L259.2,87.0 L260.1,81.2Z","cx":271.6,"cy":93.3,"desc":"Akçakoca'nın Karadeniz plajı, şelaleleri ve Roma dönemi Prusias ad Hypium kentiyle bir fındık ili.","known":["Akçakoca plajları","Efteni Gölü","Samandere Şelalesi","Fındık"],"pic":"hazelnut","cap":"Düzce fındığı"}]};
+  var NS = 'http://www.w3.org/2000/svg';
+  var svg = document.getElementById('map');
+  var stage = document.getElementById('stage');
+  var gProv = document.getElementById('provinces');
+  var gCodes = document.getElementById('codes');
+  var gPop = document.getElementById('pop');
+  var tip = document.getElementById('tip');
+  var card = document.getElementById('card');
+  var $ = function (id) { return document.getElementById(id); };
+  var pad2 = function (n) { return (n < 10 ? '0' : '') + n; };
+
+  /* ---------- kart illüstrasyonları: 320x150, düz renkli, her il için bir sembol ---------- */
+var W = '#fff';
+function R(x, y, w, h, f, o, rx) { return '<rect x="' + x + '" y="' + y + '" width="' + w + '" height="' + h + '" fill="' + f + '"' + (o != null ? ' opacity="' + o + '"' : '') + (rx ? ' rx="' + rx + '"' : '') + '/>'; }
+function P(p, f, o) { return '<polygon points="' + p + '" fill="' + f + '"' + (o != null ? ' opacity="' + o + '"' : '') + '/>'; }
+function A(d, f, o) { return '<path d="' + d + '" fill="' + f + '"' + (o != null ? ' opacity="' + o + '"' : '') + '/>'; }
+function C(x, y, r, f, o) { return '<circle cx="' + x + '" cy="' + y + '" r="' + r + '" fill="' + f + '"' + (o != null ? ' opacity="' + o + '"' : '') + '/>'; }
+function E(x, y, rx, ry, f, o) { return '<ellipse cx="' + x + '" cy="' + y + '" rx="' + rx + '" ry="' + ry + '" fill="' + f + '"' + (o != null ? ' opacity="' + o + '"' : '') + '/>'; }
+function L(d, s, w, o) { return '<path d="' + d + '" fill="none" stroke="' + s + '" stroke-width="' + (w || 1.5) + '" stroke-opacity="' + (o == null ? 1 : o) + '" stroke-linecap="round" stroke-linejoin="round"/>'; }
+function G(t, i) { return '<g transform="' + t + '">' + i + '</g>'; }
+function sky() { return R(0, 0, 320, 150, 'url(#sk)'); }
+function sun(x, y, r) { return C(x, y, r * 1.8, W, .35) + C(x, y, r, '#fff8e6'); }
+function cloud(x, y, k) { k = k || 1; return E(x, y, 18 * k, 6 * k, W, .85) + E(x + 12 * k, y - 4 * k, 12 * k, 6 * k, W, .85) + E(x - 12 * k, y - 2 * k, 10 * k, 5 * k, W, .85); }
+function pine(x, y, k, c) { c = c || '#2f6f48'; return R(x - 1.5 * k, y - 3 * k, 3 * k, 6 * k, '#5a3a2a') + P((x - 13 * k) + ',' + (y - 3 * k) + ' ' + x + ',' + (y - 26 * k) + ' ' + (x + 13 * k) + ',' + (y - 3 * k), c) + P((x - 10 * k) + ',' + (y - 16 * k) + ' ' + x + ',' + (y - 38 * k) + ' ' + (x + 10 * k) + ',' + (y - 16 * k), c) + P((x - 7 * k) + ',' + (y - 28 * k) + ' ' + x + ',' + (y - 48 * k) + ' ' + (x + 7 * k) + ',' + (y - 28 * k), c); }
+function tree(x, y, k, f) { return R(x - 2 * k, y - 14 * k, 4 * k, 16 * k, '#6b4a3a') + C(x, y - 20 * k, 12 * k, f || '#4f9a62') + C(x - 7 * k, y - 15 * k, 8 * k, f || '#4f9a62') + C(x + 7 * k, y - 15 * k, 8 * k, f || '#4f9a62'); }
+function minaret(x, top, bot, c, cap, n) { cap = cap || '#8f1019'; n = n || 1; var s = R(x - 3, top + 14, 6, bot - top - 14, c) + P((x - 3.6) + ',' + (top + 14) + ' ' + x + ',' + top + ' ' + (x + 3.6) + ',' + (top + 14), cap); for (var i = 0; i < n; i++) s += R(x - 5.5, top + 24 + i * 16, 11, 3, cap); return s; }
+function dome(cx, y, r, c, h) { h = h || r * .9; return A('M' + (cx - r) + ' ' + y + ' A' + r + ' ' + h + ' 0 0 1 ' + (cx + r) + ' ' + y + 'Z', c); }
+function hex(cx, cy, r, f) { var p = []; for (var i = 0; i < 6; i++) { var a = Math.PI / 6 + i * Math.PI / 3; p.push((cx + r * Math.cos(a)).toFixed(1) + ',' + (cy + r * Math.sin(a)).toFixed(1)); } return P(p.join(' '), f); }
+function wave(y, c, o) { var d = 'M0 ' + y + ' q10 -4 20 0'; for (var i = 0; i < 15; i++) d += ' t20 0'; return L(d, c || W, 1.6, o == null ? .5 : o); }
+function rnd(i) { var x = Math.sin(i * 12.9898) * 43758.5453; return x - Math.floor(x); }
+function crenel(x, y, n, step, c) { var s = ''; for (var i = 0; i < n; i++) s += R(x + i * step, y, step * .55, 5, c); return s; }
+function houses(y, from, to, step, roof) { var s = ''; for (var x = from, i = 0; x < to; x += step, i++) { s += R(x, y - 12, step - 6, 14, i % 2 ? '#f6e8d6' : '#f2dcc0') + P((x - 2) + ',' + (y - 12) + ' ' + (x + (step - 6) / 2) + ',' + (y - 21) + ' ' + (x + step - 4) + ',' + (y - 12), roof || '#b9573f'); } return s; }
+
+var SC = {};
+
+/* --- Doğu Anadolu --- */
+SC.ararat = function () {
+  return sky() + sun(264, 30, 13) + P('0,112 56,88 120,102 196,86 320,106 320,112', '#ecc0c4') +
+    P('226,112 270,62 318,112', '#c06a72') + P('270,62 258,80 267,75 273,82 281,75 285,82', W) +
+    P('34,112 150,16 268,112', '#a64d58') + P('150,16 268,112 204,112 176,64', '#8c3b48') +
+    P('150,16 126,54 138,47 150,60 162,46 176,58 172,46', W) +
+    R(0, 112, 320, 38, '#dcb98f') + E(70, 128, 60, 6, '#cfa97c') + E(230, 134, 70, 7, '#cfa97c') +
+    L('M20 120 h40 M240 126 h50 M120 140 h60', '#b98d62', 2, .6);
+};
+SC.ararat2 = function () {
+  var s = SC.ararat();
+  [50, 104, 214, 266].forEach(function (x, i) { var y = 126 + (i % 2) * 8; s += R(x - 2, y - 2, 4, 14, '#6b4a3a') + C(x, y - 6, 12, '#f9d6dc') + C(x - 7, y - 2, 8, '#fff0f1') + C(x + 8, y - 3, 8, '#f4b8c4'); });
+  return s;
+};
+SC.nemrut = function () {
+  var s = sky() + sun(60, 34, 13) + P('0,112 50,90 120,104 200,92 320,108 320,112', '#ecc0c4') + P('20,112 160,40 300,112', '#b98e6c') + P('160,40 300,112 230,112 180,60', '#a07858');
+  for (var i = 0; i < 18; i++) s += C(80 + ((i * 53) % 160), 66 + ((i * 29) % 34), 1.6, '#8c6648');
+  s += R(0, 112, 320, 38, '#c9a47e');
+  [[70, 15], [116, 17], [160, 21], [204, 17], [250, 15]].forEach(function (h) {
+    var x = h[0], r = h[1];
+    s += R(x - r * .9, 102, r * 1.8, 14, '#d6b690') + R(x - r * .7, 78, r * 1.4, 26, '#dcbd98') + E(x, 68, r * .62, r * .8, '#e6cba9') +
+      L('M' + x + ' 66 v8', '#b99772', 1.6) + L('M' + (x - r * .35) + ' 63 h' + (r * .22) + ' M' + (x + r * .13) + ' 63 h' + (r * .22), '#b99772', 1.6);
+  });
+  return s;
+};
+SC.ahlat = function () {
+  var s = sky() + sun(264, 30, 12) + P('50,100 160,28 270,100', '#cc8b94') + P('160,28 140,54 152,48 160,58 170,46 184,56', W) + R(0, 100, 320, 12, '#d8c4a0') + R(0, 112, 320, 38, '#5aa5d4') + wave(124) + wave(138, W, .35);
+  [[64, 1], [160, 1.35], [256, .9]].forEach(function (t) {
+    var x = t[0], k = t[1];
+    s += R(x - 14 * k, 112 - 34 * k, 28 * k, 34 * k, '#c9a47e') + P((x - 17 * k) + ',' + (112 - 34 * k) + ' ' + x + ',' + (112 - 62 * k) + ' ' + (x + 17 * k) + ',' + (112 - 34 * k), '#a8603f') +
+      R(x - 3 * k, 112 - 18 * k, 6 * k, 18 * k, '#5e3b30') + R(x - 14 * k, 114, 28 * k, 20 * k, '#c9a47e', .22);
+  });
+  return s;
+};
+SC.frozenlake = function () {
+  var s = sky() + sun(60, 30, 12) + P('0,86 70,50 140,80 220,44 320,82 320,96 0,96', '#e8c0c6') + P('70,50 56,66 66,62 72,70 82,60', W) + P('220,44 204,64 214,58 222,68 232,56', W) + R(0, 90, 320, 60, '#e8f3fa') + R(0, 90, 320, 6, '#fff');
+  s += L('M20 108 L90 104 M150 118 L260 112 M60 132 L170 128', '#b9d9ea', 2, .8) + pine(24, 96, .8, '#2f6f48') + pine(296, 98, .9, '#2f6f48');
+  // atlı kızak
+  s += L('M150 124 q10 6 60 6 q10 0 14 -6', '#6b4a3a', 2.5) + R(160, 106, 44, 14, '#b9573f', 1, 2) + R(160, 104, 44, 3, '#8f1019') + C(182, 98, 5, '#e8b890') + R(178, 100, 8, 8, '#8f1019') +
+    E(236, 108, 18, 8, '#7a4b34') + R(222, 112, 3.5, 16, '#6b4a3a') + R(230, 112, 3.5, 16, '#6b4a3a') + R(246, 112, 3.5, 16, '#6b4a3a') + R(252, 112, 3.5, 16, '#6b4a3a') +
+    P('248,104 258,86 266,88 262,106', '#7a4b34') + E(268, 88, 8, 5, '#7a4b34') + L('M204 112 Q216 108 226 108', '#3a2a22', 1.4);
+  return s;
+};
+SC.twinminaret = function () {
+  var s = sky() + sun(268, 28, 12) + P('0,100 70,52 150,92 220,44 320,98', '#e8c0c6') + P('70,52 54,72 64,66 72,76 82,64', W) + P('220,44 202,66 214,60 222,70 234,58', W) + R(0, 112, 320, 38, W) + E(160, 118, 140, 5, '#e3edf3');
+  s += R(96, 42, 128, 70, '#c9ab86') + R(132, 28, 56, 84, '#d9bc96') + A('M142 112 V68 A18 18 0 0 1 178 68 V112Z', '#5e3b30') + A('M148 112 V70 A12 12 0 0 1 172 70 V112Z', '#2f2024');
+  for (var i = 0; i < 4; i++) s += L('M' + (138 + i * 3) + ' ' + (44 + i * 3) + ' H' + (182 - i * 3), '#b8956c', 1.6);
+  [72, 224].forEach(function (x) { s += R(x, 20, 24, 92, '#c9ab86'); for (var j = 0; j < 7; j++) s += R(x, 28 + j * 12, 24, 5, '#2fa3a0'); s += R(x - 2, 16, 28, 5, '#8f1019') + P(x + ',' + 16 + ' ' + (x + 12) + ',2 ' + (x + 24) + ',16', '#8f1019'); });
+  return s + R(96, 38, 128, 4, '#b8956c');
+};
+SC.canyon = function () {
+  var s = R(0, 0, 320, 150, '#f7d6d2') + P('128,0 192,0 176,112 146,112', W, .35);
+  s += P('0,0 118,0 130,38 112,70 126,110 112,150 0,150', '#a9553f') + P('320,0 202,0 190,36 208,72 196,110 210,150 320,150', '#b9633f');
+  [[24, 40, 114, 46], [14, 66, 120, 70], [22, 94, 114, 98], [18, 122, 116, 128]].forEach(function (a) { s += L('M0 ' + a[1] + ' L' + a[2] + ' ' + a[3], '#c9835a', 3, .8); });
+  [[206, 34, 320, 28], [200, 62, 320, 60], [204, 90, 320, 94], [206, 120, 320, 124]].forEach(function (a) { s += L('M' + a[0] + ' ' + a[1] + ' L320 ' + a[3], '#d0916a', 3, .8); });
+  s += P('112,150 126,110 196,110 210,150', '#4f9ec8') + L('M130 124 q20 -5 40 0 t36 0', W, 1.6, .6) + E(150, 112, 14, 4, '#7a4b3a') + E(184, 114, 10, 3, '#7a4b3a');
+  return s;
+};
+SC.wheat = function () {
+  var s = sky() + sun(60, 30, 12) + P('0,92 70,56 140,86 210,50 320,88 320,100 0,100', '#e0b0b8') + P('70,56 56,74 66,68 72,78 82,66', W) + P('210,50 194,70 204,64 212,74 224,62', W) + R(0, 96, 320, 54, '#e8c15a');
+  for (var i = 0; i < 26; i++) { var x = 6 + i * 12.5, h = 46 + rnd(i) * 22, lean = (rnd(i + 7) - .5) * 10; s += L('M' + x + ' 150 Q' + (x + lean / 2) + ' ' + (150 - h / 2) + ' ' + (x + lean) + ' ' + (150 - h), '#b98a1e', 1.6) + E(x + lean, 150 - h - 6, 3, 8, '#d6a22b') + L('M' + (x + lean) + ' ' + (150 - h - 14) + ' v-5', '#b98a1e', 1); }
+  return s;
+};
+SC.ani = function () {
+  var s = sky() + sun(268, 28, 12) + cloud(60, 32) + R(0, 112, 320, 38, '#bcd48a') + P('0,112 0,100 90,104 320,108 320,112', '#a9c47a');
+  s += P('10,112 10,88 26,80 40,92 56,84 70,112', '#c9a47e') + P('250,112 250,92 266,86 282,96 300,90 320,112', '#c9a47e');
+  s += R(126, 52, 56, 60, '#d9b38a') + P('122,52 154,20 186,52', '#a8603f') + L('M154 20 L142 52 M154 20 L166 52', '#8a4a30', 1.4);
+  for (var i = 0; i < 4; i++) s += A('M' + (132 + i * 13) + ' 74 V66 A4 6 0 0 1 ' + (140 + i * 13) + ' 66 V74Z', '#8a6a4c');
+  s += R(146, 88, 16, 24, '#5e3b30') + A('M146 88 A8 8 0 0 1 162 88Z', '#5e3b30') + P('100,112 100,98 112,94 122,104 122,112', '#b99772');
+  return s;
+};
+SC.castle = function () {
+  var s = sky() + sun(60, 30, 12) + cloud(250, 36) + P('0,112 70,92 150,106 230,88 320,104 320,112', '#ecc0c4') + R(0, 112, 320, 38, '#c9b08a');
+  s += P('70,112 96,76 140,62 200,62 244,78 270,112', '#a08a64') + R(104, 54, 112, 26, '#d4a982') + crenel(104, 49, 11, 10.2, '#d4a982') +
+    R(92, 34, 24, 48, '#c9a47e') + R(204, 34, 24, 48, '#c9a47e') + P('90,34 104,18 118,34', '#8f1019') + P('202,34 216,18 230,34', '#8f1019') +
+    R(148, 40, 24, 40, '#c9a47e') + P('146,40 160,24 174,40', '#8f1019') + A('M152 80 V68 A8 8 0 0 1 168 68 V80Z', '#4a2a22') + R(100, 44, 8, 10, '#6b4a3a') + R(212, 44, 8, 10, '#6b4a3a') +
+    L('M160 24 V8', '#6b4a3a', 1.6) + R(160, 8, 14, 9, '#d71f2b');
+  return s + L('M96 112 Q130 100 120 92 Q112 84 160 82', '#e8cfae', 2, .8);
+};
+SC.tower = function () {
+  var s = sky() + sun(60, 32, 12) + cloud(250, 30) + P('0,112 80,64 160,60 250,70 320,100 320,112', '#e4b8bd') + R(0, 112, 320, 38, '#c9a47e') + P('0,112 70,76 150,66 240,74 320,112', '#b8935f');
+  s += R(110, 54, 120, 28, '#a77d5a', .0) + R(70, 70, 40, 10, '#a98a68') + R(210, 72, 50, 10, '#a98a68') + crenel(70, 66, 5, 8, '#a98a68') + crenel(210, 68, 6, 8, '#a98a68');
+  s += R(138, 30, 44, 54, '#b68a62') + crenel(138, 24, 5, 9, '#b68a62') + R(138, 30, 44, 4, '#9a724e') + A('M152 84 V66 A8 8 0 0 1 168 66 V84Z', '#4a2a22') + R(152, 42, 5, 10, '#4a2a22') + R(164, 42, 5, 10, '#4a2a22') +
+    L('M160 24 V6', '#6b4a3a', 1.6) + R(160, 6, 14, 9, '#d71f2b') + houses(124, 24, 300, 34, '#b9573f');
+  return s;
+};
+SC.cave = function () {
+  var s = R(0, 0, 320, 150, '#3a2a33') + E(160, 96, 170, 60, '#6a4a55', .55);
+  var cols = ['#e8a27c', '#f2c19a', '#d98a6a', '#f6d0ac'];
+  for (var i = 0; i < 17; i++) { var x = 8 + i * 19, h = 22 + rnd(i + 3) * 44; s += P((x - 8) + ',0 ' + x + ',' + h + ' ' + (x + 8) + ',0', cols[i % 4]); }
+  s += R(0, 112, 320, 38, '#3e7f9e') + E(160, 126, 130, 10, '#5ba0c0', .7);
+  for (var j = 0; j < 12; j++) { var x2 = 14 + j * 27, h2 = 14 + rnd(j + 20) * 26; s += P((x2 - 9) + ',116 ' + x2 + ',' + (116 - h2) + ' ' + (x2 + 9) + ',116', cols[(j + 1) % 4], .95); }
+  s += R(150, 20, 18, 96, '#f2c19a', .55) + P('150,20 168,20 172,0 146,0', '#e8a27c', .8);
+  return s + L('M40 134 q20 -4 40 0 M200 140 q20 -4 40 0', W, 1.4, .4);
+};
+SC.jagged = function () {
+  var s = sky() + sun(268, 28, 11) + cloud(70, 30);
+  s += P('0,112 36,62 64,90 108,28 150,86 194,22 238,80 270,44 320,112', '#7c6a74') + P('108,28 90,56 100,50 108,62 118,50 132,64', W) + P('194,22 176,54 188,48 196,60 206,48 220,62', W) + P('270,44 258,64 266,60 272,68 282,58', W) +
+    P('0,112 36,62 50,84 20,112', '#6a5864') + P('108,28 150,86 120,112 100,70', '#6a5864', .6);
+  s += R(0, 108, 320, 42, '#b9a8a2') + P('0,150 0,118 90,112 180,124 320,114 320,150', '#a8968f') + P('150,114 170,114 190,150 130,150', W, .8);
+  s += P('228,138 246,114 264,138', '#d71f2b') + P('240,138 246,126 252,138', '#8f1019') + L('M246 114 V106', '#6b4a3a', 1.4);
+  return s;
+};
+SC.honey = function () {
+  var s = R(0, 0, 320, 150, '#fbe3a6'), cols = ['#f2b441', '#e9a52c', '#f6c35b', '#efae35'];
+  for (var r = 0; r < 5; r++) for (var c = 0; c < 9; c++) s += hex(19 + c * 38 + (r % 2) * 19, 14 + r * 33, 21, cols[(r * 3 + c) % 4]);
+  s += A('M60 0 v34 a7 7 0 0 0 14 0 v-34Z', '#c9791a') + A('M214 0 v18 a6 6 0 0 0 12 0 v-18Z', '#c9791a', .85) + C(67, 42, 4, '#c9791a');
+  s += E(218, 68, 17, 11, '#f6c333') + L('M208 59 v18 M218 58 v20 M228 60 v16', '#2b1a1e', 4) + C(236, 68, 7, '#2b1a1e') + E(214, 54, 11, 7, W, .85) + E(226, 54, 11, 7, W, .85) + L('M238 62 l8 -8 M240 66 l9 -4', '#2b1a1e', 1.4);
+  return s;
+};
+SC.mardin = function () {
+  var s = sky() + sun(268, 26, 12) + R(0, 104, 320, 46, '#e0c9a0') + L('M0 120 H320 M0 134 H320', '#d2b88a', 2, .6) + P('0,150 0,92 40,80 120,50 200,44 280,66 320,84 320,150', '#d9b78c');
+  var cs = ['#e8cba3', '#dcb98f', '#f0d6b3', '#d5b084'];
+  for (var r = 0; r < 4; r++) for (var c = 0; c < 8; c++) { var x = 20 + c * 36 + (r % 2) * 14 + rnd(r * 9 + c) * 6, y = 52 + r * 20 + c * 3 - (c > 3 ? 6 : 0); if (rnd(r * 7 + c + 4) > .15) s += R(x, y, 28, 18, cs[(r + c) % 4]) + A('M' + (x + 6) + ' ' + (y + 18) + ' V' + (y + 11) + ' A4 4 0 0 1 ' + (x + 14) + ' ' + (y + 11) + ' V' + (y + 18) + 'Z', '#7a5a40') + R(x + 18, y + 6, 5, 6, '#7a5a40'); }
+  s += minaret(172, 18, 62, '#e4c59a', '#9a6a42') + R(166, 56, 14, 8, '#e4c59a') + dome(92, 56, 10, '#cfa97c', 8);
+  return s;
+};
+SC.ark = function () {
+  var s = sky() + sun(60, 34, 12);
+  [['#ff9f9f', 80], ['#ffd89f', 74], ['#9fe0b0', 68], ['#9fcff0', 62]].forEach(function (a) { s += L('M20 112 A140 ' + a[1] + ' 0 0 1 300 112', a[0], 3, .7); });
+  s += P('0,112 70,80 130,60 190,56 250,76 320,112', '#6f4a52') + P('190,56 170,76 182,70 190,80 200,70 210,78', W, .85) + R(0, 112, 320, 38, '#c9b08a');
+  s += A('M126 62 L248 62 L232 80 L142 80Z', '#8a5a3a') + R(160, 44, 60, 18, '#a8703f') + P('154,44 190,26 226,44', '#6b4a3a') + R(184, 50, 12, 12, '#3a2a22') + L('M130 70 H244', '#6b4a3a', 1.2, .8);
+  s += E(276, 38, 6, 3.5, W) + P('270,38 262,30 274,34', W) + L('M281 38 q6 -2 8 -6', W, 1.6);
+  return s;
+};
+SC.sivas = null;
+
+/* --- Güneydoğu --- */
+SC.nemrutDummy = null;
+SC.citywall = function () {
+  var s = sky() + sun(268, 24, 11) + R(0, 112, 320, 38, '#6fb06e') + R(0, 130, 320, 20, '#5aa5d4') + wave(140);
+  s += R(0, 50, 320, 62, '#4a3f44');
+  for (var y = 60; y < 112; y += 10) s += L('M0 ' + y + ' H320', '#5d5156', 1);
+  for (var x = 6; x < 320; x += 20) s += L('M' + x + ' 50 V112', '#5d5156', 1, .6);
+  for (var c = 0; c < 18; c++) s += R(c * 18, 42, 10, 9, '#4a3f44');
+  [[40, 44], [232, 44]].forEach(function (t) { s += R(t[0], 26, 44, 86, '#3f353a') + crenel(t[0], 20, 6, 8, '#3f353a') + R(t[0] + 16, 46, 6, 14, '#1f1719') + R(t[0] + 24, 74, 6, 14, '#1f1719'); });
+  s += A('M140 112 V86 A20 20 0 0 1 180 86 V112Z', '#241b1e') + A('M146 112 V88 A14 14 0 0 1 174 88 V112Z', '#352a2e');
+  s += E(40, 128, 13, 11, '#2f7a4a') + A('M62 120 A12 12 0 0 0 86 120Z', '#d71f2b') + A('M62 120 A12 12 0 0 0 86 120', '#2f7a4a') + C(70, 123, 1.2, '#2b1a1e') + C(76, 125, 1.2, '#2b1a1e') + C(80, 122, 1.2, '#2b1a1e');
+  return s;
+};
+SC.oilpump = function () {
+  var s = sky() + sun(60, 32, 12) + P('0,112 100,96 200,106 320,92 320,112', '#e4b8bd') + R(0, 112, 320, 38, '#c9a47e') + E(160, 140, 150, 10, '#b98d62', .6);
+  s += R(120, 108, 100, 8, '#4a3f44') + P('150,108 170,60 190,108', '#d71f2b') + R(164, 56, 12, 8, '#8f1019');
+  s += G('rotate(-12 170 60)', R(96, 52, 130, 10, '#8f1019') + P('96,48 96,68 76,62 76,54', '#d71f2b')) + L('M80 62 V108', '#4a3f44', 2.2);
+  s += C(208, 100, 14, '#4a3f44') + C(208, 100, 5, '#d71f2b') + L('M208 100 L190 66', '#4a3f44', 2.2) + R(76, 108, 22, 12, '#4a3f44') + L('M80 108 V120', '#4a3f44', 3);
+  s += E(264, 120, 8, 4, '#2b1a1e') + L('M264 116 V104 M258 104 h12', '#4a3f44', 2) + E(30, 124, 14, 5, '#2b1a1e');
+  return s;
+};
+SC.pistachio = function () {
+  var s = R(0, 0, 320, 150, '#fde6dc') + L('M10 130 Q120 96 310 40', '#6b4a3a', 4);
+  [[40, 118, -30], [80, 104, 20], [130, 92, -40], [170, 78, 10], [214, 62, -35], [256, 50, 15], [292, 40, -30]].forEach(function (l) { s += G('rotate(' + l[2] + ' ' + l[0] + ' ' + l[1] + ')', E(l[0], l[1] - 14, 10, 22, '#6fa857') + L('M' + l[0] + ' ' + (l[1] - 34) + ' V' + (l[1]), '#4f8a42', 1.2, .8)); });
+  [[110, 110], [200, 84], [270, 64]].forEach(function (c) {
+    for (var i = 0; i < 9; i++) { var a = (i / 9) * 6.28, x = c[0] + Math.cos(a) * 11 * (.5 + i % 3 * .3), y = c[1] + 12 + Math.sin(a) * 9 * (.4 + i % 3 * .4) + i * 1.6; s += E(x, y, 5.5, 8, i % 3 ? '#e0606b' : '#e98a86') + E(x - 1.4, y - 2, 1.6, 3, W, .5); }
+    s += L('M' + c[0] + ' ' + (c[1] - 6) + ' v14', '#6b4a3a', 2);
+  });
+  return s;
+};
+SC.gobekli = function () {
+  var s = sky() + sun(264, 28, 12) + cloud(60, 34) + P('0,112 90,92 180,104 260,88 320,100 320,112', '#ecc0c4') + R(0, 112, 320, 38, '#d2ad7e') + E(160, 130, 160, 18, '#c49d6c', .6);
+  [[56, .75], [112, .9], [160, 1.15], [208, .9], [264, .75]].forEach(function (p) {
+    var x = p[0], k = p[1];
+    s += R(x - 20 * k, 112 - 74 * k, 40 * k, 16 * k, '#e6d2b0') + R(x - 11 * k, 112 - 58 * k, 22 * k, 62 * k, '#dcc6a2') + R(x - 11 * k, 112 - 38 * k, 22 * k, 4 * k, '#b99a72') +
+      L('M' + (x - 8 * k) + ' ' + (112 - 50 * k) + ' q' + (-8 * k) + ' ' + (12 * k) + ' ' + (-4 * k) + ' ' + (24 * k) + ' M' + (x + 8 * k) + ' ' + (112 - 50 * k) + ' q' + (8 * k) + ' ' + (12 * k) + ' ' + (4 * k) + ' ' + (24 * k), '#b99a72', 1.4) +
+      L('M' + (x - 4 * k) + ' ' + (112 - 24 * k) + ' q' + (4 * k) + ' ' + (-6 * k) + ' ' + (8 * k) + ' 0', '#b99a72', 1.4);
+  });
+  return s;
+};
+SC.baklava = function () {
+  var s = R(0, 0, 320, 150, '#fde6dc') + E(160, 76, 140, 62, W, .8) + R(94, 18, 132, 114, '#f2c15a', 1, 6) + R(94, 18, 132, 114, 'none', 0) + L('M94 18 H226 V132 H94Z', '#b97a1e', 2.5);
+  s += '<clipPath id="pan"><rect x="94" y="18" width="132" height="114" rx="6"/></clipPath><g clip-path="url(#pan)">';
+  for (var i = -6; i < 8; i++) s += L('M' + (94 + i * 22) + ' 18 L' + (94 + i * 22 + 114) + ' 132 M' + (94 + i * 22 + 114) + ' 18 L' + (94 + i * 22) + ' 132', '#b97a1e', 1.2, .7);
+  s += '</g>';
+  for (var r = 0; r < 5; r++) for (var c = 0; c < 6; c++) { var x = 104 + c * 22 + (r % 2) * 11, y = 32 + r * 20; if (x > 100 && x < 220) s += C(x, y, 3.4, '#7fb24a') + C(x - 1, y - 1, 1.2, '#b6dc84'); }
+  s += E(262, 52, 7, 4.5, '#d9b88a') + E(262, 52, 3.5, 2.4, '#7fb24a') + E(278, 70, 7, 4.5, '#d9b88a') + E(278, 70, 3.5, 2.4, '#7fb24a') + E(54, 94, 7, 4.5, '#d9b88a') + E(54, 94, 3.5, 2.4, '#7fb24a');
+  return s + L('M104 26 L214 26', W, 2, .5);
+};
+SC.mosaic = function () {
+  var s = R(0, 0, 320, 150, '#f3e2c0') + R(56, 12, 208, 126, '#3b2a2a') + R(62, 18, 196, 114, '#e8d3a8');
+  s += R(70, 26, 180, 98, '#b86a3e') + R(78, 34, 164, 82, '#f1e1c0');
+  s += C(160, 75, 40, '#e8d3a8') + C(160, 75, 34, '#b86a3e') + C(160, 75, 28, '#f1e1c0') + C(160, 75, 20, '#3b2a2a') + C(160, 75, 15, '#d9a56a') + C(152, 72, 2.4, '#3b2a2a') + C(168, 72, 2.4, '#3b2a2a') + L('M153 82 q7 5 14 0', '#3b2a2a', 1.6) + L('M141 62 q-8 -8 0 -16 M179 62 q8 -8 0 -16 M160 56 v-12', '#b86a3e', 2.4);
+  for (var i = 0; i < 8; i++) { var a = i * Math.PI / 4; s += C(160 + Math.cos(a) * 52, 75 + Math.sin(a) * 38, 4, '#3b2a2a'); }
+  s += R(0, 0, 320, 150, 'url(#tess)', .8);
+  return s;
+};
+SC.rose = function () {
+  var s = R(0, 0, 320, 150, '#fde6e9');
+  [[96, 84, -35], [226, 84, 35], [112, 118, -20], [210, 118, 20]].forEach(function (l) { s += G('rotate(' + l[2] + ' ' + l[0] + ' ' + l[1] + ')', E(l[0], l[1], 14, 32, '#4f9a62') + L('M' + l[0] + ' ' + (l[1] - 30) + ' V' + (l[1] + 30), '#2f6f48', 1.2, .8)); });
+  s += R(158, 100, 4, 50, '#2f6f48');
+  s += C(160, 66, 44, '#b32a46') + C(160, 66, 36, '#d63e5a') + C(160, 66, 27, '#bd304d') + C(160, 66, 19, '#e8566f') + C(160, 66, 11, '#c63753') + C(160, 66, 5, '#f07d92');
+  s += L('M124 70 q8 24 36 22 M196 62 q-8 -24 -36 -22 M132 48 q22 -8 36 8 M190 80 q-20 14 -34 -2', '#8f1d38', 1.8, .8) + L('M146 66 q4 -10 16 -8 q10 4 6 14', '#f7a1b1', 1.6, .8);
+  s += C(40, 30, 8, '#f4b8c4', .7) + C(280, 120, 10, '#f4b8c4', .7) + C(268, 28, 6, '#f4b8c4', .7);
+  return s;
+};
+SC.mine = function () {
+  var s = sky() + sun(268, 28, 11) + P('0,112 80,86 170,100 250,82 320,100 320,112', '#d49aa0') + R(0, 112, 320, 38, '#3a3034');
+  s += P('0,150 0,118 70,110 140,126 210,116 320,124 320,150', '#2b2226') + R(0, 100, 320, 12, '#b98d62', .0);
+  s += P('130,112 160,28 190,112', 'none') + L('M130 112 L158 36 M190 112 L162 36 M140 96 H180 M146 78 H174 M152 62 H168', '#4a3f44', 3) + C(160, 30, 14, '#d71f2b') + C(160, 30, 5, '#4a3f44') + L('M160 30 V112', '#2b1a1e', 1.4) + L('M146 30 L160 16 L174 30', '#4a3f44', 3);
+  s += R(190, 88, 60, 24, '#8a7a72') + P('186,88 220,70 254,88', '#6a5a52') + R(60, 92, 50, 20, '#8a7a72') + P('56,92 85,76 114,92', '#6a5a52') + R(262, 70, 10, 42, '#6a5a52') + E(268, 62, 12, 6, W, .5) + E(278, 50, 14, 7, W, .35);
+  s += P('20,126 60,108 100,126', '#2b2226') + P('230,128 270,110 316,128', '#2b2226') + C(36, 118, 1.6, '#4a3f44') + C(250, 120, 1.6, '#4a3f44');
+  return s;
+};
+
+/* --- Ege & Akdeniz --- */
+SC.rockcastle = function () {
+  var s = sky() + sun(60, 34, 13) + cloud(240, 30) + P('0,112 70,82 150,100 240,78 320,100 320,112', '#ecc0c4') + R(0, 112, 320, 38, '#dcc4a4');
+  s += P('92,112 110,72 130,54 152,46 192,46 214,60 230,86 244,112', '#8d5a4a') + L('M118 84 L216 78 M108 98 L236 94', '#6f4338', 2, .6) + L('M132 60 L140 112 M176 52 L170 112', '#a56e5a', 2, .5);
+  s += R(142, 34, 66, 14, '#d08a64') + R(138, 18, 18, 30, '#c97b5a') + R(194, 18, 18, 30, '#c97b5a') + P('136,18 147,6 158,18', '#8f1019') + P('192,18 203,6 214,18', '#8f1019') + R(166, 38, 16, 10, '#4a2a22') + L('M140 112 Q170 100 160 90 Q150 80 175 70 Q185 66 172 48', '#e8cfae', 2, .8);
+  return s + houses(126, 14, 310, 38, '#b9573f');
+};
+SC.pamukkale = function () {
+  var s = sky() + sun(268, 22, 10) + P('0,64 100,30 220,28 320,52 320,150 0,150', '#f6e3d6');
+  for (var k = 0; k < 4; k++) s += R(100 + k * 28, 26 - k * 0, 6, 22, '#e8d8c4') + R(98 + k * 28, 24, 10, 3, '#d9c8ae');
+  for (var i = 0; i < 5; i++) { var y = 54 + i * 17; s += A('M' + (40 + i * 8) + ' ' + y + ' Q160 ' + (y - 14) + ' ' + (280 - i * 8) + ' ' + y + ' Q300 ' + (y + 18) + ' 160 ' + (y + 22) + ' Q20 ' + (y + 18) + ' ' + (40 + i * 8) + ' ' + y + 'Z', W) + E(160, y + 9, 98 - i * 6, 7, '#5fc8d0', .9) + E(160, y + 8, 82 - i * 6, 3, '#9fe0e6', .8); }
+  return s;
+};
+SC.columns = function () {
+  var s = sky() + sun(268, 30, 13) + cloud(70, 34) + P('0,112 80,90 180,104 260,88 320,106 320,112', '#ecc0c4') + R(0, 112, 320, 38, '#e4cfa8');
+  s += R(36, 104, 248, 8, '#f1e4cc') + R(46, 96, 228, 8, '#f6ecd8') + R(54, 90, 212, 6, '#ece0c8');
+  for (var i = 0; i < 7; i++) { var x = 62 + i * 32; s += R(x, 42, 14, 48, '#f6ecd8') + L('M' + (x + 4) + ' 42 V90 M' + (x + 9) + ' 42 V90', '#d6c4a4', 1.2) + R(x - 3, 36, 20, 6, '#ece0c8') + R(x - 2, 88, 18, 3, '#ece0c8'); }
+  s += R(50, 28, 220, 10, '#f1e4cc') + P('46,28 160,4 274,28', '#f6ecd8') + P('78,28 160,10 242,28', '#ecc0c4', .7) + R(298, 94, 10, 18, '#f1e4cc') + R(296, 90, 14, 4, '#ece0c8') + E(20, 114, 14, 4, '#d6c4a4');
+  return s;
+};
+SC.windmill = function () {
+  var s = sky() + sun(268, 30, 12) + cloud(150, 26) + R(0, 96, 320, 54, '#4aa0d0') + P('190,96 236,80 300,96', '#6e9e7a') + wave(120, W, .45) + wave(136, W, .3);
+  s += P('0,150 0,100 130,100 170,112 170,150', '#d9c9a3') + P('60,100 68,52 92,52 100,100', '#f4e8d6') + P('62,52 80,34 98,52', '#b9573f') + R(76, 86, 8, 14, '#6b4a3a') + L('M80 50 L110 22 M80 50 L50 22 M80 50 L110 78 M80 50 L50 78', '#8a5a3a', 3) + C(80, 50, 4, '#6b4a3a');
+  s += R(132, 84, 8, 28, '#6b4a3a') + C(136, 76, 16, '#7d9a6a') + C(124, 82, 12, '#8fae7a') + C(150, 82, 12, '#6f8f5e') + C(130, 72, 2, '#3a4a30') + C(144, 80, 2, '#3a4a30') + C(120, 86, 2, '#3a4a30');
+  s += R(212, 124, 40, 5, '#8f1019') + P('232,124 232,96 252,124', W) + P('230,124 230,104 216,124', W) + L('M232 96 V124', '#6b4a3a', 1.2);
+  return s;
+};
+SC.grapes = function () {
+  var s = R(0, 0, 320, 150, '#eef3d4') + P('60,0 90,0 100,30 80,24', '#4f9a62', 0) + L('M220 0 Q214 20 226 36', '#6b4a3a', 3);
+  s += P('230,30 250,10 262,26 280,16 276,40 296,46 274,56 282,76 258,66 244,84 238,62 214,60 232,48', '#4f9a62') + L('M232 34 L270 52 M250 20 L256 72', '#2f6f48', 1.2, .8);
+  for (var r = 0; r < 6; r++) { var n = 6 - r; for (var c = 0; c < n; c++) { var x = 150 + (c - (n - 1) / 2) * 21, y = 36 + r * 18; s += C(x, y, 11, '#a3c75a') + C(x - 3, y - 3, 3.4, '#d6ea9c', .9) + C(x + 4, y + 4, 11, '#8fb549', .0); } }
+  s += L('M150 36 L150 14 Q150 4 162 2', '#6b4a3a', 3);
+  s += E(40, 118, 30, 14, '#7a4b3a') + E(30, 112, 5, 3, '#5a2f2a') + E(46, 114, 5, 3, '#5a2f2a') + E(58, 118, 5, 3, '#5a2f2a') + E(38, 122, 5, 3, '#5a2f2a') + E(24, 122, 5, 3, '#5a2f2a');
+  return s;
+};
+SC.paraglider = function () {
+  var s = sky() + sun(268, 24, 11) + P('0,100 60,64 130,92 190,58 260,90 320,70 320,104 0,104', '#9fbf88') + P('0,104 80,84 170,100 250,86 320,100 320,104', '#5e9a73');
+  s += R(0, 100, 320, 50, '#2fb7b0') + P('0,150 0,118 120,110 220,126 320,116 320,150', '#1f8fb5') + P('140,100 220,96 300,100 260,112 190,108', '#f1e4cc') + wave(132, W, .4);
+  s += A('M112 46 Q160 -6 208 46 Q160 34 112 46Z', '#d71f2b') + A('M136 38 Q160 4 184 38 Q160 30 136 38Z', W) + L('M114 46 L156 80 M206 46 L164 80 M160 34 V80 M138 40 L158 80 M182 40 L162 80', '#4a3f44', 1, .8);
+  s += R(154, 78, 12, 14, '#2b1a1e', 1, 3) + C(160, 74, 5, '#e8b890') + R(150, 90, 6, 14, '#2b1a1e') + R(164, 90, 6, 14, '#2b1a1e');
+  return s;
+};
+SC.clocktower = function () {
+  var s = sky() + sun(60, 30, 12) + cloud(260, 30) + R(0, 112, 320, 38, '#4aa0d0') + R(0, 108, 320, 8, '#e4cfa8') + wave(130, W, .4);
+  s += R(130, 70, 60, 42, '#f0dcb8') + R(126, 66, 68, 6, '#e0c898') + R(140, 28, 40, 40, '#f4e4c4') + R(144, 40, 32, 28, '#f9edd6') + C(160, 54, 12, W) + L('M160 54 V46 M160 54 L166 58', '#2b1a1e', 1.8) + C(160, 54, 12, 'none');
+  s += P('138,28 160,8 182,28', '#b9573f') + R(158, 2, 4, 8, '#d9a23a') + A('M142 112 V90 A8 8 0 0 1 158 90 V112Z', '#8a6a4c') + A('M162 112 V90 A8 8 0 0 1 178 90 V112Z', '#8a6a4c') + L('M130 78 H190', '#cdb894', 2);
+  [60, 262].forEach(function (x) { s += L('M' + x + ' 108 Q' + (x + 4) + ' 80 ' + (x - 2) + ' 56', '#6b4a3a', 4) + L('M' + (x - 2) + ' 56 q-18 -2 -26 10 M' + (x - 2) + ' 56 q16 -8 28 4 M' + (x - 2) + ' 56 q-6 -14 -20 -14 M' + (x - 2) + ' 56 q10 -14 24 -10', '#2f8a56', 4); });
+  return s;
+};
+SC.seacastle = function () {
+  var s = sky() + sun(268, 26, 11) + P('0,72 70,44 150,66 230,40 320,68 320,74 0,74', '#c98a92') + R(0, 70, 320, 80, '#4aa0d0') + P('0,150 0,112 60,108 80,150', '#f1dcb6') + wave(90, W, .35) + wave(130, W, .35);
+  s += E(160, 108, 70, 9, '#e0c9a0') + R(110, 76, 100, 32, '#d9b898') + crenel(110, 71, 10, 10, '#d9b898') + R(104, 62, 20, 46, '#cfa97c') + R(196, 62, 20, 46, '#cfa97c') + crenel(104, 57, 3, 8, '#cfa97c') + crenel(196, 57, 3, 8, '#cfa97c') + R(146, 50, 28, 58, '#d9b898') + crenel(146, 45, 3, 10, '#d9b898');
+  s += A('M152 108 V90 A8 8 0 0 1 168 90 V108Z', '#4a2a22') + R(112, 86, 5, 9, '#6b4a3a') + R(203, 86, 5, 9, '#6b4a3a') + L('M160 45 V30', '#6b4a3a', 1.4) + R(160, 30, 14, 9, '#d71f2b') + R(110, 112, 100, 20, '#d9b898', .22);
+  s += P('264,128 264,108 282,128', W) + R(258, 128, 28, 4, '#8f1019');
+  return s;
+};
+SC.hamam = function () {
+  var s = sky() + sun(268, 26, 11) + R(0, 112, 320, 38, '#9cc566') + R(0, 112, 320, 4, '#7fae50');
+  s += R(70, 74, 180, 38, '#e8d6b8') + R(70, 74, 180, 4, '#d2bd9a');
+  [[96, 16], [136, 14], [178, 18], [220, 14]].forEach(function (d) { s += dome(d[0], 74, d[1], '#c9a07a', d[1] * .75) + C(d[0] - 3, 74 - d[1] * .45, 1.6, '#4a3a2a') + C(d[0] + 3, 74 - d[1] * .3, 1.6, '#4a3a2a'); });
+  for (var i = 0; i < 6; i++) s += A('M' + (84 + i * 28) + ' 112 V96 A6 6 0 0 1 ' + (96 + i * 28) + ' 96 V112Z', '#7a5a40');
+  [[100, 54], [150, 48], [210, 56]].forEach(function (p) { s += L('M' + p[0] + ' ' + p[1] + ' q-8 -10 0 -18 t0 -18 t0 -18', W, 3, .75); });
+  s += tree(30, 124, 1.4, '#4f9a62') + tree(290, 122, 1.4, '#4f9a62') + E(160, 130, 56, 8, '#5fc8d0') + E(160, 129, 44, 4, '#9fe0e6');
+  return s;
+};
+
+/* --- Marmara --- */
+SC.ayasofya = function () {
+  var s = sky() + sun(268, 24, 11) + cloud(60, 30) + R(0, 112, 320, 38, '#4aa0d0') + R(0, 108, 320, 6, '#9cc566') + wave(128, W, .4) + wave(142, W, .3);
+  s += R(74, 78, 172, 30, '#d49a85') + dome(160, 78, 52, '#b9726e', 34) + dome(100, 80, 24, '#c58680', 16) + dome(220, 80, 24, '#c58680', 16) + R(66, 68, 12, 42, '#c4846f') + R(242, 68, 12, 42, '#c4846f');
+  for (var i = 0; i < 8; i++) s += R(122 + i * 9.5, 64, 4, 8, '#7a4a3e');
+  for (var j = 0; j < 6; j++) s += A('M' + (88 + j * 26) + ' 108 V96 A5 6 0 0 1 ' + (97 + j * 26) + ' 96 V108Z', '#7a4a3e');
+  s += minaret(44, 28, 110, '#f1e4cc', '#8f1019', 2) + minaret(276, 28, 110, '#f1e4cc', '#8f1019', 2) + minaret(58, 42, 110, '#ece0c8', '#8f1019', 1) + minaret(262, 42, 110, '#ece0c8', '#8f1019', 1);
+  s += R(236, 126, 34, 6, '#8f1019') + R(244, 120, 18, 6, W) + P('270,126 280,126 270,132', '#8f1019') + L('M120 24 q4 -4 8 0 q4 -4 8 0 M200 36 q4 -4 8 0 q4 -4 8 0', '#4a3f44', 1.2, .7);
+  return s;
+};
+SC.selimiye = function () {
+  var s = sky() + sun(268, 28, 12) + cloud(60, 30) + R(0, 112, 320, 38, '#9cc566') + R(0, 112, 320, 4, '#7fae50');
+  s += R(96, 84, 128, 28, '#ecdcc3') + dome(160, 84, 48, '#b66b6b', 44) + dome(110, 84, 14, '#c58080', 10) + dome(210, 84, 14, '#c58080', 10) + R(158, 28, 4, 12, '#d9a23a') + C(160, 26, 3.2, '#d9a23a');
+  for (var i = 0; i < 7; i++) s += A('M' + (104 + i * 16) + ' 112 V98 A3.2 4 0 0 1 ' + (110.4 + i * 16) + ' 98 V112Z', '#8a6a56') + R(104 + i * 16, 88, 6, 6, '#8a6a56', .0);
+  [68, 90, 230, 252].forEach(function (x) { s += minaret(x, 14, 112, '#f4e8d0', '#8f1019', 3); });
+  return s + tree(24, 126, 1.2, '#4f9a62') + tree(298, 126, 1.2, '#4f9a62');
+};
+SC.trojan = function () {
+  var s = sky() + sun(264, 28, 12) + cloud(70, 30) + R(0, 112, 320, 38, '#d9c9a3') + R(0, 86, 320, 28, '#c9b79e') + crenel(0, 81, 31, 10.4, '#c9b79e') + L('M0 100 H320', '#b09a7e', 1.5, .6);
+  s += E(160, 118, 90, 6, '#b9a888', .7);
+  [124, 156, 184, 208].forEach(function (x) { s += R(x - 6, 82, 12, 30, '#8f5a34'); });
+  s += R(112, 50, 100, 38, '#a8693f', 1, 12) + P('196,56 210,28 238,26 246,40 226,46 216,64', '#a8693f') + P('230,26 236,14 242,28', '#8f5a34') + C(232, 36, 2, '#2b1a1e') + L('M246 40 q-6 6 -18 6', '#8f5a34', 1.4);
+  s += L('M112 60 q-14 -2 -14 -16', '#8f5a34', 5) + L('M120 56 H206 M118 70 H204 M124 82 H200', '#8f5a34', 1.6, .9) + L('M150 50 V88 M184 50 V88', '#8f5a34', 1.4, .7) + L('M200 38 q8 -12 22 -10', '#6b3f22', 4);
+  s += R(100, 108, 130, 6, '#6b4a3a') + C(116, 116, 8, '#6b4a3a') + C(160, 116, 8, '#6b4a3a') + C(204, 116, 8, '#6b4a3a') + C(116, 116, 3, '#c9a47e') + C(160, 116, 3, '#c9a47e') + C(204, 116, 3, '#c9a47e');
+  return s;
+};
+SC.ulucami = function () {
+  var s = sky() + sun(268, 28, 12) + P('0,112 80,50 150,86 210,40 320,96 320,112', '#d49aa0') + P('210,40 194,62 204,56 212,66 222,54 232,64', W) + R(0, 112, 320, 38, '#d9ccb6');
+  for (var j = 0; j < 4; j++) s += dome(106 + j * 36, 70, 13, '#b98a88', 10);
+  s += R(62, 74, 196, 38, '#e5d3b8') + R(62, 74, 196, 4, '#cdb894');
+  for (var i = 0; i < 5; i++) s += dome(88 + i * 36, 74, 16, '#a97a78', 13) + R(86 + i * 36, 58, 4, 4, '#d9a23a', .0);
+  for (var k = 0; k < 8; k++) s += A('M' + (72 + k * 23) + ' 112 V94 A5 6 0 0 1 ' + (82 + k * 23) + ' 94 V112Z', '#8a6a56');
+  return s + minaret(46, 26, 112, '#e5d3b8', '#8f1019', 2) + minaret(274, 30, 112, '#e5d3b8', '#8f1019', 2) + pine(24, 126, 1, '#2f6f48') + pine(300, 126, 1, '#2f6f48');
+};
+SC.lakepines = function () {
+  var s = sky() + sun(262, 26, 12) + cloud(80, 26) + P('0,92 60,60 130,84 200,54 280,82 320,66 320,96 0,96', '#7fb08a') + P('0,96 90,70 190,92 260,72 320,92 320,96', '#5e9a73') + R(0, 90, 320, 6, '#2f6f48') + R(0, 96, 320, 54, '#4f9fcf') + R(0, 96, 320, 12, '#2f6f48', .35) + wave(124, W, .4) + wave(138, W, .3);
+  s += pine(24, 118, 1.5) + pine(62, 124, 1.1) + pine(96, 118, .9) + pine(266, 120, 1.3) + pine(300, 116, 1.6) + R(140, 108, 60, 4, '#8a5a3a') + R(146, 112, 3, 12, '#6b4a3a') + R(190, 112, 3, 12, '#6b4a3a');
+  return s;
+};
+SC.lakepier = function () {
+  var s = R(0, 0, 320, 150, 'url(#sk)') + C(170, 74, 26, '#ffd9a0', .8) + C(170, 74, 14, '#fff3d6') + P('0,84 70,56 150,80 230,52 320,80 320,90 0,90', '#c98a92') + P('0,90 100,72 200,88 320,76 320,90', '#8fae7a') + R(0, 88, 320, 62, '#e9a99a') + R(0, 88, 320, 62, '#5aa5d4', .5);
+  s += L('M150 96 h40 M130 106 h80 M110 118 h120', '#ffd9a0', 2.2, .7) + wave(132, W, .35);
+  s += R(0, 108, 190, 6, '#8a5a3a');
+  for (var i = 0; i < 7; i++) s += R(8 + i * 28, 114, 4, 20, '#6b4a3a');
+  s += R(200, 118, 50, 6, '#6b4a3a') + P('216,118 216,98 236,118', W) + P('214,118 214,104 202,118', '#fbd0d4') + tree(284, 100, 1.4, '#4f9a62') + tree(306, 102, 1.1, '#6f9a5a');
+  return s;
+};
+SC.floodforest = function () {
+  var s = R(0, 0, 320, 150, '#dcebe4') + R(0, 78, 320, 72, '#6aa9b8') + E(160, 74, 200, 12, W, .5);
+  [24, 66, 104, 150, 196, 238, 282].forEach(function (x, i) {
+    var h = 50 + rnd(i + 2) * 16; s += R(x - 3.5, 78 - h, 7, h, '#4a3a32') + C(x, 78 - h, 17, '#4f9a62') + C(x - 12, 78 - h + 8, 11, '#3f8a52') + C(x + 11, 78 - h + 6, 12, '#5aa86c') + R(x - 3.5, 78, 7, h * .8, '#4a3a32', .3) + E(x, 78 + h * .9, 16, 8, '#4f9a62', .25);
+  });
+  return s + wave(110, W, .5) + wave(128, W, .4) + L('M40 100 h70 M170 112 h80', W, 2, .5);
+};
+SC.sunflower = function () {
+  var s = sky() + sun(60, 28, 12) + cloud(250, 30) + P('0,100 80,84 200,96 320,82 320,110 0,110', '#9cc566') + R(0, 108, 320, 42, '#8fb54e');
+  for (var i = 0; i < 30; i++) s += C(8 + i * 11, 100 + rnd(i) * 8, 3, '#f2c21e', .9);
+  [[70, 70, 24, 1], [160, 58, 30, 1.2], [250, 74, 22, 1]].forEach(function (f) {
+    var x = f[0], y = f[1], r = f[2];
+    s += L('M' + x + ' ' + (y + r) + ' V150', '#3f8a52', 4) + E(x - 16, y + r + 22, 14, 6, '#4f9a62') + E(x + 16, y + r + 36, 14, 6, '#4f9a62');
+    for (var k = 0; k < 16; k++) { var a = k / 16 * 360; s += G('rotate(' + a + ' ' + x + ' ' + y + ')', E(x, y - r * .78, r * .2, r * .38, k % 2 ? '#f2c21e' : '#f7d548')); }
+    s += C(x, y, r * .5, '#6b3f22') + C(x, y, r * .34, '#4a2a18');
+  });
+  return s;
+};
+SC.hazelnut = function () {
+  var s = R(0, 0, 320, 150, '#e8f0d6') + L('M10 126 Q120 96 312 40', '#6b4a3a', 4);
+  [[40, 118, -35], [90, 104, 25], [140, 90, -40], [190, 76, 15], [240, 62, -35], [280, 46, 20]].forEach(function (l) { s += G('rotate(' + l[2] + ' ' + l[0] + ' ' + l[1] + ')', E(l[0], l[1] - 16, 14, 24, '#6fa857') + L('M' + l[0] + ' ' + (l[1] - 38) + ' V' + (l[1]), '#4f8a42', 1.2, .8) + E(l[0], l[1] - 16, 14, 24, 'none')); });
+  [[110, 104], [200, 82], [262, 62]].forEach(function (c) {
+    var x = c[0], y = c[1] + 12;
+    s += P((x - 20) + ',' + (y - 6) + ' ' + (x - 6) + ',' + (y - 24) + ' ' + (x + 8) + ',' + (y - 20) + ' ' + (x + 22) + ',' + (y - 6) + ' ' + x + ',' + (y + 4), '#7fb06a') + C(x - 9, y + 4, 9, '#b57a3f') + C(x + 3, y + 8, 9, '#a96d34') + C(x + 13, y + 2, 9, '#c0894a') + C(x - 11, y + 1, 2.4, '#d9a86a') + C(x + 1, y + 5, 2.4, '#d9a86a') + C(x + 11, y - 1, 2.4, '#e0b27a');
+  });
+  return s;
+};
+
+/* --- Karadeniz --- */
+SC.sumela = function () {
+  var s = sky() + sun(60, 28, 11) + P('0,112 0,30 90,16 210,30 320,12 320,112', '#7b5f5c') + P('90,16 210,30 230,112 70,112', '#6a504f') + L('M100 26 L110 112 M160 24 L150 112 M200 30 L206 112', '#5a4342', 2, .7);
+  s += R(0, 112, 320, 38, '#2f6f48') + pine(24, 130, 1.5) + pine(60, 134, 1.2) + pine(262, 132, 1.4) + pine(298, 128, 1.6) + pine(90, 138, 1) + pine(232, 140, 1.1);
+  s += R(104, 54, 112, 56, '#e8cfae') + P('100,54 104,50 216,50 220,54', '#cdb48c') + R(112, 36, 34, 18, '#f2e0c4') + P('108,36 129,24 150,36', '#b9573f') + R(158, 42, 50, 12, '#f2e0c4') + P('154,42 183,32 212,42', '#b9573f');
+  for (var i = 0; i < 6; i++) s += R(112 + i * 18, 66, 8, 14, '#8a6a56') + A('M' + (112 + i * 18) + ' 94 V90 A4 5 0 0 1 ' + (120 + i * 18) + ' 90 V94Z', '#8a6a56');
+  s += R(112, 100, 96, 4, '#cdb48c') + P('90,112 108,104 108,112', '#5a4342') + E(160, 112, 120, 5, W, .35) + E(70, 100, 34, 6, W, .3);
+  return s;
+};
+SC.tea = function () {
+  var s = sky() + sun(264, 26, 11) + P('0,60 70,34 150,50 230,28 320,52 320,100 0,100', '#7fb08a');
+  for (var i = 0; i < 7; i++) { var y = 56 + i * 11; s += A('M0 ' + (y + 6) + ' Q80 ' + (y - 8) + ' 160 ' + (y + 2) + ' T320 ' + (y - 2) + ' V' + (y + 10) + ' Q240 ' + (y + 14) + ' 160 ' + (y + 12) + ' T0 ' + (y + 16) + 'Z', i % 2 ? '#3f8a52' : '#4f9a62'); for (var k = 0; k < 26; k++) s += C(8 + k * 12.5, y + 6 + Math.sin(k * .6) * 3, 2.6, '#2f6f48', .5); }
+  s += R(0, 126, 320, 24, '#f4e7e0') + E(160, 130, 94, 12, W) + E(160, 130, 72, 8, '#e8d7d0') +
+    A('M126 56 H194 L186 122 Q160 134 134 122Z', '#f8e8e4', .35) + A('M130 74 H190 L184 122 Q160 132 136 122Z', '#a8242e') + A('M130 74 Q160 86 190 74 L192 70 Q160 82 128 70Z', '#c43a40') + L('M126 56 Q160 66 194 56', W, 2) + L('M138 80 L142 116', W, 2.4, .5) +
+    P('206,128 224,114 232,124 214,132', '#6fa857') + P('104,128 90,114 84,124 98,132', '#6fa857');
+  return s;
+};
+SC.hamsi = null;
+SC.island = function () {
+  var s = sky() + sun(268, 24, 11) + P('0,100 60,56 140,92 200,70 320,98 320,102 0,102', '#5e9a73') + R(0, 100, 320, 50, '#4aa0d0') + wave(118, W, .4) + wave(134, W, .3);
+  s += P('84,114 118,76 150,64 190,76 218,114', '#7a8f6a') + P('118,76 150,64 190,76 170,84 130,86', '#8fa87a') + R(142, 50, 22, 14, '#e8d8c4') + P('140,50 153,38 166,50', '#b9573f') + A('M148 64 V58 A5 5 0 0 1 158 58 V64Z', '#6b4a3a') + P('84,114 218,114 232,118 70,118', '#e0c9a0');
+  s += R(250, 124, 38, 5, '#8f1019') + P('268,124 268,102 284,124', W) + P('266,124 266,108 254,124', '#fbd0d4') + L('M30 100 q4 -10 10 0 M52 98 q4 -9 10 0', '#4a3f44', 1.2, .6);
+  return s;
+};
+SC.cablecar = function () {
+  var s = sky() + sun(268, 24, 11) + R(0, 120, 320, 30, '#4aa0d0') + wave(134, W, .4) + P('0,150 0,92 70,76 150,58 240,40 320,24 320,150', '#5e9a73') + P('0,150 0,112 100,100 200,86 320,66 320,150', '#4f9a62');
+  for (var i = 0; i < 9; i++) s += C(24 + i * 34, 110 + (i % 3) * 8 - i * 3, 4, '#3f8a52', .6);
+  s += houses(124, 8, 140, 30, '#b9573f') + L('M0 108 L320 20', '#4a3f44', 1.6) + R(196, 66, 5, 40, '#6b4a3a', .0);
+  s += L('M170 40 V52', '#4a3f44', 1.6) + R(150, 52, 40, 26, '#d71f2b', 1, 4) + R(154, 58, 14, 12, '#fbd0d4') + R(172, 58, 14, 12, '#fbd0d4') + R(150, 52, 40, 4, '#8f1019') + L('M170 40 L170 52', '#4a3f44', 2);
+  s += P('0,24 8,18 14,24', W, 0) + L('M170 36 L150 40 M170 36 L190 32', '#4a3f44', 1.4, 0);
+  return s;
+};
+SC.kackar = function () {
+  var s = sky() + sun(264, 24, 11) + P('0,112 40,64 78,92 124,30 170,84 216,40 260,86 292,58 320,112', '#8a7078') + P('124,30 104,60 114,54 124,66 134,52 148,64', W) + P('216,40 198,66 210,60 218,70 228,58 240,70', W) + P('292,58 280,76 288,72 294,80 304,70', W);
+  s += P('0,150 0,106 90,84 190,96 320,80 320,150', '#4f9a62') + pine(30, 112, 1.2) + pine(70, 108, 1) + pine(108, 112, 1.1) + pine(250, 100, 1.2) + pine(290, 96, 1.4);
+  s += P('130,150 150,100 190,100 230,150', '#5aa5d4') + L('M150 112 q16 4 30 0 M144 128 q22 6 44 0', W, 1.8, .6) + E(176, 122, 22, 8, '#d71f2b') + E(176, 120, 22, 4, '#ff6f78') + C(168, 114, 3.4, '#2b1a1e') + C(180, 114, 3.4, '#2b1a1e') + L('M166 110 l-3 14 M182 110 l3 14', '#4a3f44', 1.4);
+  return s;
+};
+SC.ship = function () {
+  var s = sky() + sun(268, 34, 13) + R(0, 100, 320, 50, '#4aa0d0') + wave(116, W, .4) + wave(134, W, .3) + wave(146, W, .25);
+  s += P('56,92 252,92 236,116 76,116', '#2b1a1e') + R(60, 92, 188, 5, '#d71f2b') + R(100, 76, 110, 16, W) + R(124, 62, 56, 14, W) + R(190, 44, 16, 32, '#d71f2b') + R(190, 44, 16, 6, '#2b1a1e');
+  for (var i = 0; i < 9; i++) s += C(108 + i * 11, 84, 2.4, '#4aa0d0');
+  for (var j = 0; j < 4; j++) s += C(132 + j * 12, 69, 2.2, '#4aa0d0');
+  s += L('M92 92 V50 M236 92 V54', '#4a3f44', 2) + L('M92 50 L120 76 M236 54 L206 76', '#4a3f44', 1) + R(60, 66, 20, 13, '#d71f2b') + C(66, 72.5, 3.6, W) + C(67.4, 72.5, 2.9, '#d71f2b') + L('M70 79 V92', '#4a3f44', 1.4);
+  s += E(206, 34, 14, 8, '#c9b8b8', .85) + E(228, 24, 16, 8, '#d9c8c8', .7) + E(252, 16, 14, 7, '#e8d8d8', .55);
+  return s;
+};
+SC.lighthouse = function () {
+  var s = sky() + sun(60, 30, 12) + R(0, 100, 320, 50, '#4aa0d0') + wave(116, W, .4) + wave(134, W, .3);
+  s += P('190,150 210,112 262,98 320,104 320,150', '#8a6a58') + P('262,100 270,40 286,40 294,100', W) + P('265,82 268,60 288,60 291,82', '#d71f2b') + R(268, 28, 18, 12, '#2b1a1e') + C(277, 34, 4, '#ffd24a') + P('266,28 277,16 288,28', '#d71f2b');
+  s += R(8, 88, 160, 24, '#c9ab86') + crenel(8, 83, 16, 10, '#c9ab86') + R(18, 66, 26, 46, '#b8956c') + crenel(18, 61, 4, 7, '#b8956c') + R(112, 70, 26, 42, '#b8956c') + crenel(112, 65, 4, 7, '#b8956c') + A('M70 112 V98 A8 8 0 0 1 86 98 V112Z', '#4a2a22');
+  s += E(160, 118, 70, 6, W, .45) + L('M200 40 q4 -4 8 0 q4 -4 8 0', '#4a3f44', 1.2, .7);
+  return s;
+};
+SC.garlic = function () {
+  var s = R(0, 0, 320, 150, '#f6ece4') + R(0, 112, 320, 38, '#c4915f') + L('M0 124 H320 M0 138 H320', '#a8744a', 1.5, .8);
+  [[90, 88, 1.1], [160, 94, 1.4], [236, 90, 1]].forEach(function (b) {
+    var x = b[0], y = b[1], k = b[2];
+    s += P((x - 5 * k) + ',' + (y - 16 * k) + ' ' + (x - 2 * k) + ',' + (y - 44 * k) + ' ' + (x + 2 * k) + ',' + (y - 44 * k) + ' ' + (x + 5 * k) + ',' + (y - 16 * k), '#e8dcc4') + E(x, y, 26 * k, 21 * k, '#fdf6ef') + E(x, y, 26 * k, 21 * k, 'none') +
+      L('M' + x + ' ' + (y - 18 * k) + ' Q' + (x - 14 * k) + ' ' + y + ' ' + (x - 6 * k) + ' ' + (y + 20 * k) + ' M' + x + ' ' + (y - 18 * k) + ' Q' + (x + 14 * k) + ' ' + y + ' ' + (x + 6 * k) + ' ' + (y + 20 * k) + ' M' + x + ' ' + (y - 18 * k) + ' V' + (y + 21 * k), '#d9c2c2', 1.4, .9) + L('M' + (x - 6 * k) + ' ' + (y + 21 * k) + ' l-2 6 M' + x + ' ' + (y + 21 * k) + ' v7 M' + (x + 6 * k) + ' ' + (y + 21 * k) + ' l2 6', '#a8744a', 1.2);
+  });
+  s += E(122, 128, 9, 5, '#f7e6e6') + E(206, 130, 9, 5, '#f7e6e6') + P('280,128 288,116 296,128', '#f7e6e6') + E(40, 126, 9, 5, '#f7e6e6');
+  return s;
+};
+SC.harbor = function () {
+  var s = sky() + sun(268, 26, 11) + R(0, 96, 320, 54, '#4aa0d0') + wave(120, W, .4) + wave(138, W, .3);
+  s += P('110,150 124,100 144,72 176,66 200,86 214,150', '#8a7a62') + P('110,150 124,100 130,150', '#6f604c') + R(140, 40, 60, 28, '#d9b898') + crenel(140, 35, 6, 10, '#d9b898') + R(150, 24, 18, 44, '#cfa97c') + crenel(150, 19, 3, 6, '#cfa97c') + P('148,24 159,10 170,24', '#8f1019') + A('M174 68 V58 A6 6 0 0 1 186 58 V68Z', '#4a2a22');
+  s += houses(100, 20, 120, 24, '#b9573f') + houses(100, 210, 310, 24, '#b9573f');
+  [[40, 124], [250, 124]].forEach(function (b) { s += P(b[0] + ',' + b[1] + ' ' + (b[0] + 28) + ',' + b[1] + ' ' + (b[0] + 22) + ',' + (b[1] + 8) + ' ' + (b[0] + 6) + ',' + (b[1] + 8), '#8f1019') + P((b[0] + 14) + ',' + b[1] + ' ' + (b[0] + 14) + ',' + (b[1] - 22) + ' ' + (b[0] + 28) + ',' + b[1], W); });
+  return s;
+};
+
+/* --- İç Anadolu --- */
+SC.anitkabir = function () {
+  var s = sky() + sun(268, 26, 11) + cloud(60, 30) + R(0, 112, 320, 38, '#d9ccb6') + R(40, 104, 240, 8, '#cfc0a6') + R(48, 98, 224, 6, '#e2d6c1');
+  s += R(70, 60, 180, 38, '#eadfcb') + R(66, 52, 188, 10, '#e2d6c1');
+  for (var i = 0; i < 12; i++) s += R(78 + i * 14.5, 62, 6, 34, '#cdbf9f');
+  s += R(52, 44, 30, 56, '#e2d6c1') + R(238, 44, 30, 56, '#e2d6c1') + R(48, 38, 38, 8, '#d6c8ac') + R(234, 38, 38, 8, '#d6c8ac') + R(63, 58, 8, 30, '#8a7a62') + R(249, 58, 8, 30, '#8a7a62');
+  s += L('M160 52 V24', '#6b4a3a', 1.6) + R(160, 24, 18, 11, '#d71f2b') + C(167, 29.5, 3.4, W) + C(168.2, 29.5, 2.7, '#d71f2b');
+  s += P('14,126 22,86 30,126', '#2f6f48') + P('290,126 298,86 306,126', '#2f6f48');
+  for (var j = 0; j < 5; j++) s += R(40 + j * 46, 122, 14, 8, '#c4b596') + R(44 + j * 46, 118, 6, 5, '#c4b596');
+  return s;
+};
+SC.saltcave = function () {
+  var s = R(0, 0, 320, 150, '#5a3138') + E(160, 100, 170, 60, '#8b5a60', .6);
+  for (var i = 0; i < 17; i++) { var x = 8 + i * 19, h = 20 + rnd(i + 5) * 46; s += P((x - 8) + ',0 ' + x + ',' + h + ' ' + (x + 8) + ',0', i % 2 ? '#f7e5e4' : '#f1d3d2'); }
+  for (var j = 0; j < 14; j++) { var x2 = 10 + j * 24, h2 = 12 + rnd(j + 31) * 34; s += P((x2 - 10) + ',150 ' + x2 + ',' + (150 - h2) + ' ' + (x2 + 10) + ',150', j % 2 ? '#f1d9d8' : '#fbe9e8'); }
+  s += R(150, 40, 20, 80, '#f7e5e4', .55) + P('150,40 170,40 164,0 156,0', '#f7e5e4', .5);
+  s += L('M30 70 l6 -6 M280 80 l6 -6 M90 100 l6 -6 M220 60 l6 -6', W, 1.6, .8) + C(40, 90, 2, W) + C(250, 110, 2, W) + C(120, 80, 1.6, W);
+  s += R(130, 126, 12, 24, '#e8c0c0') + C(136, 120, 5, '#e8b890') + R(132, 124, 8, 10, '#d71f2b');
+  return s;
+};
+SC.liongate = function () {
+  var s = sky() + sun(264, 26, 12) + P('0,112 80,86 170,102 260,82 320,100 320,112', '#ecc0c4') + R(0, 112, 320, 38, '#cfae8a');
+  s += R(40, 64, 240, 48, '#bfa07f') + R(40, 60, 240, 5, '#a8896a') + R(70, 30, 56, 82, '#c8a885') + R(194, 30, 56, 82, '#c8a885') + crenel(70, 25, 6, 9.4, '#c8a885') + crenel(194, 25, 6, 9.4, '#c8a885');
+  s += P('126,112 126,76 160,48 194,76 194,112', '#2f2024') + P('136,112 136,80 160,60 184,80 184,112', '#3f2f33');
+  [50, 70, 90].forEach(function (y) { s += L('M70 ' + y + ' H126 M194 ' + y + ' H250', '#a8896a', 1.5, .9); });
+  [98, 222].forEach(function (x) { s += C(x, 66, 17, '#b59574') + C(x, 66, 11, '#a38462') + P((x - 6) + ',68 ' + (x + 6) + ',68 ' + x + ',80', '#8a6c4c') + C(x - 4, 62, 2, '#3a2a22') + C(x + 4, 62, 2, '#3a2a22') + L('M' + (x - 14) + ' 56 l4 4 M' + (x + 14) + ' 56 l-4 4', '#8a6c4c', 1.6); });
+  return s;
+};
+SC.kangal = function () {
+  var s = sky() + sun(60, 28, 12) + P('0,100 70,60 140,92 210,52 320,96 320,108 0,108', '#e4b8bd') + P('210,52 194,72 204,66 212,76 222,64', W) + R(0, 108, 320, 42, '#cfd8a0') + P('0,150 0,120 120,114 240,122 320,112 320,150', '#bcc78a');
+  s += L('M98 82 Q76 62 92 44', '#d8b078', 8) + E(150, 84, 52, 23, '#d8b078') + R(108, 92, 11, 34, '#d8b078') + R(124, 94, 11, 32, '#cfa56c') + R(172, 94, 11, 32, '#cfa56c') + R(188, 92, 11, 34, '#d8b078') + E(113, 127, 8, 3.4, '#b98a52') + E(129, 127, 8, 3.4, '#b98a52') + E(177, 127, 8, 3.4, '#b98a52') + E(193, 127, 8, 3.4, '#b98a52');
+  s += P('184,72 200,46 222,54 206,90', '#d8b078') + E(222, 52, 17, 13, '#d8b078') + E(232, 58, 11, 8, '#2a1a18') + P('210,44 206,26 224,38', '#2a1a18') + C(224, 48, 2, W) + C(224, 48, 1, '#2a1a18') + E(240, 56, 3, 2, '#000') + R(190, 70, 20, 5, '#6b4a3a') + P('192,70 196,64 200,70 204,64 208,70', '#8a8a8a');
+  return s;
+};
+SC.printblock = function () {
+  var s = R(0, 0, 320, 150, '#f8efe6') + A('M20 20 Q90 8 160 22 T300 18 V120 Q230 134 160 120 T20 126Z', '#f6e6cf');
+  for (var r = 0; r < 4; r++) for (var c = 0; c < 8; c++) { var x = 44 + c * 34 + (r % 2) * 17, y = 40 + r * 24; if (x < 280) { s += C(x, y, 5, '#b2262f') + C(x - 6, y, 3, '#2b3a6a') + C(x + 6, y, 3, '#2b3a6a') + C(x, y - 6, 3, '#2b3a6a') + C(x, y + 6, 3, '#2b3a6a') + C(x, y, 2, '#f6e6cf'); } }
+  s += L('M20 22 Q90 10 160 24 T300 20 M20 124 Q90 136 160 122 T300 120', '#b2262f', 2.4, .9);
+  s += R(236, 100, 54, 40, '#8a5a3a', 1, 4) + R(246, 80, 34, 22, '#6b4a3a', 1, 6) + C(263, 128, 12, '#b2262f') + C(257, 128, 6, '#f6e6cf') + C(269, 128, 6, '#f6e6cf') + C(263, 122, 6, '#f6e6cf') + C(263, 134, 6, '#f6e6cf') + C(263, 128, 4, '#b2262f');
+  return s;
+};
+SC.pot = function () {
+  var s = sky() + R(0, 112, 320, 38, '#5a3a2a') + sun(60, 32, 11) + E(160, 128, 120, 12, '#3a2a22');
+  s += P('96,128 150,118 214,128 190,134 120,134', '#6b4a3a') + R(100, 122, 120, 8, '#7a5a40', 1, 3) + P('120,126 128,86 140,120', '#ff9a3c') + P('150,126 160,76 172,126', '#ff6a2c') + P('180,126 192,92 202,126', '#ff9a3c') + P('140,126 152,100 164,126', '#ffd24a') + P('166,126 176,104 188,126', '#ffd24a');
+  s += E(160, 70, 52, 42, '#b9573f') + E(160, 66, 52, 38, '#c8654a') + R(142, 24, 36, 22, '#b9573f') + E(160, 24, 22, 7, '#8f3f2e') + E(160, 24, 14, 3.4, '#4a2a22') + L('M130 54 Q116 70 128 92', '#e89a82', 4, .7) + L('M122 66 q38 10 76 0 M120 80 q40 12 80 0', '#8f3f2e', 1.6, .7) + E(160, 26, 24, 4, '#e0805a', 0);
+  s += L('M150 18 q-6 -8 0 -14 M170 18 q6 -8 0 -14', W, 2.4, .75);
+  return s;
+};
+SC.refinery = function () {
+  var s = sky() + sun(268, 30, 11) + P('0,112 80,96 160,108 240,92 320,106 320,112', '#e4b8bd') + R(0, 112, 320, 38, '#8a7a72') + R(0, 112, 320, 4, '#6a5a52');
+  [[50, 60], [84, 78], [236, 66], [272, 84]].forEach(function (c, i) { s += R(c[0] - 7, c[1], 14, 112 - c[1], i % 2 ? '#d9c8c0' : '#c9b8b0') + R(c[0] - 9, c[1] - 3, 18, 5, '#6a5a52') + L('M' + (c[0] - 7) + ' ' + (c[1] + 20) + ' H' + (c[0] + 7) + ' M' + (c[0] - 7) + ' ' + (c[1] + 40) + ' H' + (c[0] + 7), '#8a7a72', 1.4); });
+  s += R(160, 40, 6, 72, '#8a7a72') + P('163,22 154,40 172,40', '#ff9a3c') + P('163,30 158,40 168,40', '#ffd24a') + L('M163 40 L120 112 M163 40 L206 112', '#6a5a52', 1.4);
+  s += C(134, 100, 12, '#d9c8c0') + C(134, 100, 12, 'none') + C(200, 100, 12, '#d9c8c0') + L('M118 112 V124 M150 112 V124 M184 112 V124 M216 112 V124', '#6a5a52', 2) + L('M0 130 H320', '#6a5a52', 4) + L('M0 140 H320', '#8f1019', 3);
+  s += E(52, 44, 12, 6, W, .5) + E(66, 34, 14, 7, W, .35);
+  return s;
+};
+SC.saz = function () {
+  var s = R(0, 0, 320, 150, '#fbe3e1');
+  for (var r = 0; r < 4; r++) for (var c = 0; c < 9; c++) s += P((20 + c * 40 + (r % 2) * 20) + ',' + (r * 40 - 6) + ' ' + (36 + c * 40 + (r % 2) * 20) + ',' + (r * 40 + 14) + ' ' + (20 + c * 40 + (r % 2) * 20) + ',' + (r * 40 + 34) + ' ' + (4 + c * 40 + (r % 2) * 20) + ',' + (r * 40 + 14), r % 2 ? '#f6c3c8' : '#fad5d8', .7);
+  s += G('rotate(-24 160 78)', E(96, 80, 38, 28, '#a5612f') + E(96, 80, 38, 28, 'none') + C(96, 80, 9, '#2b1a1e') + C(96, 80, 14, 'none') + R(130, 74, 150, 11, '#5e3b30') + R(268, 66, 22, 26, '#4a2a1e', 1, 3) + L('M80 62 Q96 52 112 62', '#8f4f24', 2) + L('M70 90 Q96 106 122 90', '#8f4f24', 2));
+  s += G('rotate(-24 160 78)', L('M104 77 L274 77 M104 80 L274 80 M104 83 L274 83', '#f5ecd8', 1.2) + L('M150 74 v14 M172 74 v14 M192 74 v14 M210 74 v14 M226 74 v14 M240 74 v14', '#2b1a1e', 1.2, .8) + C(274, 70, 2.4, '#e8d8c0') + C(274, 88, 2.4, '#e8d8c0') + C(284, 70, 2.4, '#e8d8c0'));
+  return s;
+};
+SC.cappadocia = function () {
+  var s = R(0, 0, 320, 150, 'url(#sk)') + C(160, 104, 38, '#ffd9a0', .7) + C(160, 104, 20, '#fff3d6') + R(0, 108, 320, 42, '#d9a58f') + P('0,150 0,112 100,104 200,114 320,106 320,150', '#c98f78');
+  [[44, 110, 56, 20], [92, 112, 40, 16], [150, 114, 70, 24], [214, 112, 50, 18], [270, 112, 62, 22]].forEach(function (c) {
+    var x = c[0], b = c[1], h = c[2], w = c[3];
+    s += P((x - w) + ',' + b + ' ' + (x - w * .3) + ',' + (b - h) + ' ' + (x + w * .3) + ',' + (b - h) + ' ' + (x + w) + ',' + b, '#e8b8a4') + P((x + w * .3) + ',' + (b - h) + ' ' + (x + w) + ',' + b + ' ' + (x + w * .3) + ',' + b, '#d9a08c', .8) + P((x - w * .5) + ',' + (b - h + 2) + ' ' + x + ',' + (b - h - 12) + ' ' + (x + w * .5) + ',' + (b - h + 2), '#8c5a4a') + R(x - 3, b - 16, 6, 10, '#7a4b3a');
+  });
+  [[70, 40, 1, '#d71f2b', W], [180, 28, 1.2, '#ee8a33', '#fff3d6'], [262, 46, .8, '#d71f2b', '#fbd0d4'], [120, 62, .7, '#8f1019', '#f4a3aa']].forEach(function (b) {
+    var x = b[0], y = b[1], k = b[2];
+    s += E(x, y, 18 * k, 22 * k, b[3]) + A('M' + (x - 8 * k) + ' ' + (y - 20 * k) + ' Q' + (x - 14 * k) + ' ' + y + ' ' + (x - 5 * k) + ' ' + (y + 22 * k) + ' L' + (x + 5 * k) + ' ' + (y + 22 * k) + ' Q' + (x + 14 * k) + ' ' + y + ' ' + (x + 8 * k) + ' ' + (y - 20 * k) + 'Z', b[4], .85) + R(x - 5 * k, y + 28 * k, 10 * k, 7 * k, '#6b4a3a') + L('M' + (x - 8 * k) + ' ' + (y + 20 * k) + ' L' + (x - 4 * k) + ' ' + (y + 28 * k) + ' M' + (x + 8 * k) + ' ' + (y + 20 * k) + ' L' + (x + 4 * k) + ' ' + (y + 28 * k), '#4a3f44', 1);
+  });
+  return s;
+};
+SC.apple = function () {
+  var s = sky() + sun(268, 28, 11) + P('0,100 40,56 90,86 150,40 210,84 260,50 320,100', '#e0b0b8') + P('150,40 134,62 144,56 152,66 162,54 174,64', W) + P('40,56 28,72 36,68 42,76 52,66', W) + R(0, 108, 320, 42, '#8fb54e') + P('0,150 0,122 120,114 220,124 320,116 320,150', '#7fa83e');
+  [[100, 92, 1.2, '#d71f2b'], [176, 98, 1.5, '#e02a36'], [250, 94, 1, '#f2c21e']].forEach(function (a) {
+    var x = a[0], y = a[1], k = a[2];
+    s += C(x - 7 * k, y, 15 * k, a[3]) + C(x + 7 * k, y, 15 * k, a[3]) + E(x, y + 8 * k, 18 * k, 11 * k, a[3]) + L('M' + x + ' ' + (y - 12 * k) + ' q2 -8 ' + (6 * k) + ' -14', '#6b4a3a', 2.4) + E(x + 12 * k, y - 18 * k, 9 * k, 5 * k, '#4f9a62') + E(x - 8 * k, y - 4 * k, 3 * k, 6 * k, W, .35);
+  });
+  return s;
+};
+SC.caravanserai = function () {
+  var s = sky() + sun(60, 30, 12) + P('0,112 90,86 200,100 320,82 320,112', '#ecc0c4') + P('200,100 250,56 320,100', '#d49aa0') + R(0, 112, 320, 38, '#dcc4a4');
+  s += R(70, 70, 180, 42, '#d4b48c') + crenel(70, 65, 18, 10, '#d4b48c') + R(130, 40, 60, 72, '#e4c9a2') + R(120, 36, 12, 76, '#d4b48c') + R(188, 36, 12, 76, '#d4b48c') + A('M142 112 V80 A18 18 0 0 1 178 80 V112Z', '#4a2a22') + A('M148 112 V82 A12 12 0 0 1 172 82 V112Z', '#2f2024') + R(130, 40, 60, 5, '#c9a47e');
+  for (var i = 0; i < 5; i++) s += R(136 + i * 12, 52, 5, 8, '#8a6a4c', .8);
+  [[40, 1], [282, .9]].forEach(function (c) { var x = c[0], k = c[1]; s += E(x, 124, 22 * k, 9 * k, '#b98a52') + C(x - 6 * k, 112 * k + 10, 7 * k, '#b98a52') + C(x + 8 * k, 114, 6 * k, '#b98a52') + L('M' + (x + 16 * k) + ' 120 q4 -14 12 -16', '#b98a52', 4 * k) + E(x + 30 * k, 102, 6 * k, 4 * k, '#b98a52') + R(x - 14 * k, 128, 4, 18, '#9a7240') + R(x - 4 * k, 128, 4, 18, '#9a7240') + R(x + 8 * k, 128, 4, 18, '#9a7240') + R(x + 16 * k, 128, 4, 18, '#9a7240'); });
+  return s;
+};
+SC.dervish = function () {
+  var s = R(0, 0, 320, 150, '#5e1620') + E(160, 130, 150, 36, '#7a1f2a') + R(0, 120, 320, 30, '#7a1f2a');
+  s += A('M214 112 A44 40 0 0 1 302 112Z', '#2fa3a0') + L('M230 112 q-4 -34 4 -50 M246 112 q-2 -38 2 -52 M258 112 q0 -40 0 -52 M270 112 q2 -38 -2 -52 M286 112 q4 -34 -4 -50', '#1f7f7c', 1.4) + R(250, 66, 16, 6, '#d9a23a') + R(256, 44, 4, 26, '#d9a23a') + R(214, 112, 88, 14, '#cfa97c');
+  s += minaret(40, 22, 120, '#e8d8c0', '#2fa3a0', 2);
+  s += A('M96 132 Q160 80 224 132 Q160 142 96 132Z', W) + L('M110 130 Q160 96 210 130 M122 130 Q160 108 198 130 M136 130 Q160 118 184 130', '#e0d0d0', 1.6, .9) + E(160, 134, 66, 6, '#e8dede');
+  s += R(150, 66, 20, 36, W) + L('M168 72 L214 46', W, 7) + L('M152 74 L104 98', W, 7) + R(152, 84, 16, 5, '#d71f2b') + E(160, 58, 8.4, 10, '#e8b890') + R(151, 24, 18, 34, '#b98b5a', 1, 3) + R(151, 50, 18, 4, '#8a5a3a') + L('M156 62 q4 3 8 0', '#8a5a3a', 1.2);
+  return s;
+};
+SC.tileplate = function () {
+  var s = R(0, 0, 320, 150, '#e6f0f6') + C(160, 75, 64, '#fbfdff') + C(160, 75, 64, 'none') + L('M96 75 a64 64 0 1 0 128 0 a64 64 0 1 0 -128 0', '#2f5fa8', 3) + L('M104 75 a56 56 0 1 0 112 0 a56 56 0 1 0 -112 0', '#2fa3a0', 1.6);
+  for (var i = 0; i < 20; i++) { var a = i / 20 * 6.283; s += C(160 + Math.cos(a) * 49, 75 + Math.sin(a) * 49, 2.6, i % 2 ? '#2f5fa8' : '#d71f2b'); }
+  for (var k = 0; k < 4; k++) { var a2 = k * 90 + 45; s += G('rotate(' + a2 + ' 160 75)', E(160, 44, 9, 17, '#2fa3a0') + L('M160 28 V58', '#2f5fa8', 1.2)); }
+  s += A('M160 38 Q142 56 148 70 Q154 82 160 84 Q166 82 172 70 Q178 56 160 38Z', '#d71f2b') + A('M160 38 Q152 54 156 66 Q160 52 160 38Z', '#f2606a') + L('M160 84 V108', '#2f5fa8', 2.2) + P('160,98 144,90 150,104', '#2fa3a0') + P('160,98 176,90 170,104', '#2fa3a0');
+  return s;
+};
+SC.apricot = function () {
+  var s = R(0, 0, 320, 150, '#fdeedd') + L('M0 20 Q100 40 180 30 T320 70', '#6b4a3a', 5);
+  [[40, 40, -30], [110, 50, 20], [190, 34, -25], [250, 52, 25], [300, 74, -20]].forEach(function (l) { s += G('rotate(' + l[2] + ' ' + l[0] + ' ' + l[1] + ')', E(l[0], l[1] + 16, 13, 24, '#6fa857') + L('M' + l[0] + ' ' + (l[1] - 6) + ' V' + (l[1] + 40), '#4f8a42', 1.2, .8)); });
+  [[100, 98, 24], [170, 90, 28], [236, 100, 22], [134, 122, 16]].forEach(function (a) {
+    var x = a[0], y = a[1], r = a[2];
+    s += L('M' + x + ' ' + (y - r) + ' L' + (x + 4) + ' ' + (y - r - 16), '#6b4a3a', 2.4) + C(x, y, r, '#f2a03d') + C(x + r * .25, y + r * .25, r * .7, '#ee8a33', .55) + C(x - r * .36, y - r * .36, r * .22, '#fcd49a', .8) + L('M' + x + ' ' + (y - r) + ' Q' + (x + r * .35) + ' ' + y + ' ' + x + ' ' + (y + r), '#c9631c', 1.6, .8);
+  });
+  return s;
+};
+SC.carpet = function () {
+  var s = R(0, 0, 320, 150, '#f3e4dc') + E(160, 138, 130, 8, '#d9c4bc', .6);
+  for (var f = 0; f < 22; f++) s += L('M' + (46 + f * 10) + ' 14 v-8 M' + (46 + f * 10) + ' 136 v8', '#e8d8c4', 1.8);
+  s += R(44, 14, 232, 122, '#a32028') + R(52, 22, 216, 106, '#f4e2c4') + R(56, 26, 208, 98, '#b2262f') + R(64, 34, 192, 82, '#7a1018');
+  s += P('160,40 214,75 160,110 106,75', '#f4e2c4') + P('160,50 202,75 160,100 118,75', '#2b3a6a') + P('160,60 190,75 160,90 130,75', '#d71f2b') + C(160, 75, 7, '#f4e2c4');
+  [[74, 44], [246, 44], [74, 106], [246, 106]].forEach(function (c) { s += P(c[0] + ',' + (c[1] - 10) + ' ' + (c[0] + 10) + ',' + c[1] + ' ' + c[0] + ',' + (c[1] + 10) + ' ' + (c[0] - 10) + ',' + c[1], '#f4e2c4') + C(c[0], c[1], 3.4, '#2b3a6a'); });
+  for (var d = 0; d < 9; d++) s += C(76 + d * 21, 29, 2.2, '#f4e2c4') + C(76 + d * 21, 121, 2.2, '#f4e2c4');
+  return s;
+};
+SC.akdamar = function () {
+  var s = sky() + sun(268, 26, 11) + P('0,92 60,52 130,82 200,46 270,80 320,64 320,98 0,98', '#d49aa0') + P('200,46 184,68 194,62 202,72 212,60 224,70', W) + R(0, 94, 320, 56, '#4aa0d0') + wave(116, W, .4) + wave(136, W, .3);
+  s += P('90,112 112,88 160,78 208,88 232,112', '#8a9a6a') + P('104,112 120,94 200,94 220,112', '#9aaa7a') + R(142, 56, 36, 30, '#e0b890') + R(148, 40, 24, 18, '#d9ab80') + P('146,40 160,20 174,40', '#c88a60') + L('M160 20 L152 40 M160 20 L168 40', '#a8603f', 1.2) + A('M155 86 V72 A5 6 0 0 1 165 72 V86Z', '#5e3b30') + R(152, 46, 3, 8, '#8a6a4c') + R(165, 46, 3, 8, '#8a6a4c');
+  [[104, 94], [124, 90], [198, 92], [218, 96]].forEach(function (t) { s += R(t[0] - 1.5, t[1], 3, 12, '#6b4a3a') + C(t[0], t[1] - 2, 9, '#f9d6dc') + C(t[0] - 5, t[1] + 1, 6, '#f4b8c4') + C(t[0] + 5, t[1], 6, '#fff0f1'); });
+  s += R(90, 112, 142, 16, '#8a9a6a', .22) + P('258,124 258,104 276,124', W) + R(252, 124, 28, 4, '#8f1019');
+  return s;
+};
+SC.peanut = function () {
+  var s = R(0, 0, 320, 150, '#f6e9d8') + R(0, 118, 320, 32, '#c9a47e');
+  [[84, 66, -24], [168, 48, 18], [236, 82, -10], [130, 106, 10], [214, 118, 28]].forEach(function (p) {
+    var x = p[0], y = p[1];
+    s += G('rotate(' + p[2] + ' ' + x + ' ' + y + ')', E(x - 14, y, 20, 14, '#d9ac72') + E(x + 14, y, 20, 14, '#d9ac72') + R(x - 14, y - 11, 28, 22, '#d9ac72') + L('M' + (x - 22) + ' ' + (y - 6) + ' l8 6 l-8 6 M' + (x + 22) + ' ' + (y - 6) + ' l-8 6 l8 6 M' + (x - 8) + ' ' + (y - 8) + ' l6 6 l-6 6 M' + (x + 8) + ' ' + (y - 8) + ' l-6 6 l6 6 M' + x + ' ' + (y - 10) + ' l6 10 l-6 10', '#b98a52', 1.4, .9) + L('M' + (x - 30) + ' ' + y + ' q0 -4 4 -6', '#b98a52', 1, 0));
+  });
+  s += L('M20 60 q30 -26 60 -4 M250 24 q30 -10 56 8', '#4f9a62', 2.4, .9) + E(40, 46, 12, 6, '#6fa857') + E(280, 28, 12, 6, '#6fa857');
+  return s;
+};
+SC.icecream = function () {
+  var s = R(0, 0, 320, 150, '#fde6dc') + C(160, 70, 80, W, .55);
+  s += P('130,70 190,70 160,142', '#d9a23a') + L('M138 78 L172 128 M152 74 L178 112 M166 72 L184 94 M182 74 L150 128 M168 74 L142 112 M154 72 L136 94', '#a8741a', 1.3, .9) + L('M130 70 H190', '#a8741a', 2.2);
+  s += E(160, 64, 38, 20, '#fff8f0') + E(160, 54, 30, 16, W) + A('M138 46 Q150 18 160 -4 Q170 18 182 46Z', W) + L('M146 44 Q154 24 160 0', '#f0dfd2', 2, .8) + L('M174 44 Q166 24 160 0', '#f0dfd2', 2, .8) +
+    A('M124 66 q0 12 6 12 q6 0 6 -12Z M184 66 q0 14 6 14 q6 0 6 -14Z', '#fff8f0') + L('M132 58 q6 4 12 0 M178 58 q6 4 12 0', '#f0dfd2', 1.6);
+  return s;
+};
+SC.olive = function () {
+  var s = R(0, 0, 320, 150, '#eef0dc') + L('M10 120 Q120 90 220 50 T310 20', '#6b4a3a', 4);
+  for (var i = 0; i < 12; i++) { var x = 30 + i * 22, y = 112 - i * 6.6 - (i % 2) * 10; s += G('rotate(' + (i % 2 ? 40 : -40) + ' ' + x + ' ' + y + ')', E(x, y - 12, 5, 18, i % 3 ? '#8fae6a' : '#7d9a5a')); }
+  [[100, 84], [160, 66], [214, 50], [266, 34]].forEach(function (o) { s += L('M' + o[0] + ' ' + (o[1] - 6) + ' v8', '#6b4a3a', 1.6) + E(o[0], o[1] + 8, 8, 11, '#4a3a5a') + E(o[0] - 2.4, o[1] + 4, 2, 3.4, W, .5); });
+  s += A('M250 150 L250 104 Q250 98 256 96 L256 80 L272 80 L272 96 Q278 98 278 104 L278 150Z', '#4f7a3a') + R(256, 70, 16, 12, '#2b1a1e') + L('M255 120 H273', '#f4e2c4', 14, .8) + E(264, 132, 4, 6, W, .3);
+  return s;
+};
+SC.river = function () {
+  var s = sky() + sun(268, 26, 11) + P('0,112 0,50 80,30 150,70 210,28 320,60 320,112', '#7fb08a') + P('0,112 60,66 130,90 200,56 320,92 320,112', '#5e9a73') + R(0, 100, 320, 50, '#4f9a62');
+  s += A('M146 150 Q130 130 160 118 Q196 108 170 96 Q146 86 168 74 L186 74 Q172 86 196 98 Q226 112 194 122 Q168 132 184 150Z', '#5aa5d4') + L('M150 140 q10 -6 22 -2 M176 108 q10 -4 18 0', W, 1.6, .6);
+  s += pine(24, 122, 1.4) + pine(62, 128, 1.1) + pine(268, 124, 1.3) + pine(300, 122, 1.6) + E(100, 134, 14, 5, '#8a7a72') + E(240, 138, 12, 4, '#8a7a72');
+  s += R(24, 70, 2, 24, '#6b4a3a', 0);
+  return s;
+};
+SC.basilica = function () {
+  var s = sky() + sun(268, 28, 12) + cloud(60, 30) + R(0, 112, 320, 38, '#bcd48a') + P('0,112 0,100 90,104 320,108 320,112', '#a9c47a');
+  s += P('70,112 70,64 84,52 96,64 110,58 120,70 130,66 130,112', '#d9b38a') + P('130,112 130,66 160,40 190,52 214,60 214,112', '#d4ae84') + A('M130 112 V80 A40 28 0 0 1 214 80 V112Z', '#cfa97c', 0);
+  [[84, 88], [110, 88], [150, 82], [182, 82]].forEach(function (a) { s += A('M' + a[0] + ' ' + (a[1] + 20) + ' V' + a[1] + ' A8 9 0 0 1 ' + (a[0] + 16) + ' ' + a[1] + ' V' + (a[1] + 20) + 'Z', '#7a8a5a') + A('M' + (a[0] + 2) + ' ' + (a[1] + 20) + ' V' + a[1] + ' A6 7 0 0 1 ' + (a[0] + 14) + ' ' + a[1] + ' V' + (a[1] + 20) + 'Z', '#c8d89a'); });
+  s += P('214,112 214,70 236,60 252,74 252,112', '#cfa97c') + A('M214 112 V84 A38 30 0 0 1 252 84 V112Z', 'none') + R(262, 98, 36, 8, '#e0c29a') + E(270, 108, 22, 4, '#d9b38a') + R(24, 102, 40, 10, '#e0c29a', 1, 2);
+  for (var i = 0; i < 12; i++) s += C(20 + i * 26, 122 + (i % 3) * 5, 2.6, '#d71f2b') + C(20 + i * 26, 122 + (i % 3) * 5, 1, '#2b1a1e');
+  return s;
+};
+SC.turbe = function () {
+  var s = sky() + sun(60, 32, 12) + cloud(250, 30) + P('0,112 90,88 200,104 300,86 320,100 320,112', '#ecc0c4') + R(0, 112, 320, 38, '#9cc566');
+  s += R(104, 70, 112, 42, '#e2cfb2') + R(104, 70, 112, 4, '#cdb894') + dome(160, 70, 36, '#b86a58', 30) + R(158, 30, 4, 12, '#d9a23a') + C(160, 28, 3.2, '#d9a23a');
+  [116, 150, 184].forEach(function (x) { s += A('M' + x + ' 112 V94 A10 10 0 0 1 ' + (x + 20) + ' 94 V112Z', '#7a4b3a'); });
+  s += P('44,112 56,50 68,112', '#2f6f48') + P('250,112 262,56 274,112', '#2f6f48') + L('M232 40 V100', '#6b4a3a', 2) + R(232, 40, 26, 16, '#d71f2b') + C(241, 48, 4.6, W) + C(242.6, 48, 3.7, '#d71f2b') + R(0, 112, 320, 4, '#7fae50');
+  return s + E(160, 128, 40, 6, '#cdb894', .6);
+};
+SC.kumbet = function () {
+  var s = sky() + sun(264, 28, 12) + P('0,112 100,34 220,112', '#d49aa0') + P('100,34 80,60 92,54 100,64 110,52 124,62', W) + P('160,112 240,60 320,112', '#e0b0b4') + R(0, 112, 320, 38, '#d8c4a0');
+  s += R(124, 64, 74, 48, '#c9a47e') + L('M142 64 V112 M161 64 V112 M180 64 V112', '#a8845c', 1.5) + P('118,64 161,24 204,64', '#a8603f') + L('M161 24 L148 64 M161 24 L174 64', '#8a4a30', 1.4) + R(153, 88, 16, 24, '#5e3b30') + A('M153 88 A8 8 0 0 1 169 88Z', '#5e3b30') + R(0, 112, 320, 3, '#b9a07c');
+  return s + tree(36, 128, 1, '#6f9a5a') + tree(292, 126, 1, '#6f9a5a');
+};
+SC.odunpazari = function () {
+  var s = sky() + sun(268, 26, 11) + R(0, 112, 320, 38, '#cdb89b');
+  for (var c = 0; c < 20; c++) s += E(10 + c * 16, 124 + (c % 3) * 8, 6, 3, '#b9a487', .8);
+  [[18, '#f7c9c9', '#fbe4e4'], [118, '#f8e3b0', '#fcf2d6'], [218, '#cfe3cf', '#e6f2e6']].forEach(function (h) {
+    var x = h[0];
+    s += R(x, 74, 84, 40, h[1]) + R(x - 7, 52, 98, 24, h[2]) + R(x - 7, 74, 98, 3, '#6b3f2f') + P((x - 12) + ',52 ' + (x + 42) + ',28 ' + (x + 96) + ',52', '#b9573f') + L('M' + (x - 7) + ' 52 L' + (x + 91) + ' 76 M' + (x + 91) + ' 52 L' + (x - 7) + ' 76', '#6b3f2f', 1.2, .6) +
+      R(x + 4, 56, 16, 16, W) + R(x + 38, 56, 16, 16, W) + R(x + 68, 56, 16, 16, W) + L('M' + (x + 12) + ' 56 V72 M' + (x + 46) + ' 56 V72 M' + (x + 76) + ' 56 V72', '#6b3f2f', 1.2) + R(x + 36, 88, 14, 26, '#7a4b3a') + R(x + 8, 84, 14, 14, W) + R(x + 64, 84, 14, 14, W);
+  });
+  return s;
+};
+SC.safranbolu = function () {
+  var s = sky() + sun(268, 24, 11) + P('0,112 0,60 120,30 320,70 320,112', '#8cae7a') + P('0,112 0,84 140,56 320,92 320,112', '#7fa26e');
+  [[28, 82], [92, 70], [152, 78], [212, 62], [262, 84], [112, 96], [188, 98], [30, 106]].sort(function (a, b) { return a[1] - b[1]; }).forEach(function (h) {
+    var x = h[0], y = h[1];
+    s += R(x, y, 42, 24, '#fff3e0') + R(x - 3, y - 14, 48, 16, '#fff3e0') + P((x - 6) + ',' + (y - 14) + ' ' + (x + 21) + ',' + (y - 30) + ' ' + (x + 48) + ',' + (y - 14), '#b9573f') + L('M' + (x - 3) + ' ' + (y - 6) + ' H' + (x + 45) + ' M' + x + ' ' + (y + 2) + ' H' + (x + 42) + ' M' + (x + 14) + ' ' + (y - 14) + ' V' + (y + 24) + ' M' + (x + 28) + ' ' + (y - 14) + ' V' + (y + 24), '#6b3f2f', 1.2) + R(x + 4, y - 11, 6, 5, '#7a4b3a') + R(x + 33, y - 11, 6, 5, '#7a4b3a') + R(x + 16, y + 8, 10, 16, '#7a4b3a');
+  });
+  return s + R(0, 120, 320, 30, '#6fa857') + P('0,150 0,128 320,124 320,150', '#5e9a48') + pine(300, 130, 1.2) + pine(20, 132, 1);
+};
+SC.castle2 = null;
+SC.port = function () {
+  var s = sky() + sun(60, 28, 11) + R(0, 96, 320, 54, '#4aa0d0') + wave(120, W, .4) + wave(140, W, .3) + R(0, 96, 320, 14, '#8a7a72');
+  s += P('150,98 330,98 316,112 160,112', '#2b3a6a') + R(170, 80, 140, 18, '#d71f2b') + R(180, 66, 40, 14, '#fff', 1) + R(240, 70, 60, 10, '#ee8a33');
+  [['#d71f2b', 20], ['#2f5fa8', 34], ['#ee8a33', 48], ['#2fa3a0', 62], ['#8f1019', 76], ['#d9a23a', 90]].forEach(function (c, i) { s += R(8 + (i % 3) * 22, 100 - Math.floor(i / 3) * 12 - 2, 20, 11, c[0]); });
+  [[44, 60], [214, 40]].forEach(function (c) { s += L('M' + c[0] + ' 98 V' + c[1] + ' H' + (c[0] + 60) + ' M' + (c[0] + 60) + ' 98 V' + c[1] + ' M' + c[0] + ' ' + c[1] + ' L' + (c[0] - 26) + ' ' + (c[1] + 6), '#d71f2b', 3) + L('M' + (c[0] + 30) + ' ' + c[1] + ' V80', '#4a3f44', 1.4) + R(c[0] + 24, 80, 12, 8, '#2fa3a0'); });
+  return s;
+};
+SC.bridge = function () {
+  var s = sky() + sun(60, 30, 12) + cloud(250, 28) + P('0,100 70,70 150,92 230,66 320,90 320,104 0,104', '#ecc0c4') + R(0, 100, 320, 50, '#5aa5d4') + wave(130, W, .45) + wave(144, W, .3);
+  s += R(20, 74, 280, 5, '#e8d2ae') + crenel(20, 70, 28, 10, '#e8d2ae') + R(20, 79, 280, 33, '#d4b48c');
+  for (var j = 0; j < 8; j++) s += L('M20 ' + (86 + j * 4) + ' H300', '#b8946a', 1, .5);
+  for (var i = 0; i < 6; i++) { var x = 48 + i * 45; s += A('M' + (x - 17) + ' 112 V100 A17 18 0 0 1 ' + (x + 17) + ' 100 V112Z', '#4f97c4') + A('M' + (x - 17) + ' 112 V100 A17 18 0 0 1 ' + (x + 17) + ' 100', 'none') + L('M' + (x - 19) + ' 112 V100 A19 20 0 0 1 ' + (x + 19) + ' 100 V112', '#b8946a', 2); }
+  s += E(160, 114, 150, 3, '#3f7fa8', .5) + L('M16 74 L16 112 M304 74 L304 112', '#b8946a', 3);
+  s += P('0,112 0,92 16,92 16,112', '#6fa857', 0) + tree(8, 100, .9, '#4f9a62') + tree(312, 100, .9, '#4f9a62');
+  return s;
+};
+SC.rocktombs = function () {
+  var s = sky() + sun(270, 26, 12) + P('30,30 110,10 220,6 292,24 304,112 16,112', '#a77b64') + L('M30 44 L300 40 M24 64 L304 60 M20 84 L306 82', '#8e6350', 2.2, .7) + L('M70 20 V112 M150 12 V112 M250 14 V112', '#8e6350', 1.5, .35);
+  [[104, 46], [158, 56], [210, 42]].forEach(function (t) { var x = t[0], y = t[1]; s += R(x - 3, y - 5, 32, 5, '#d8b99d') + R(x, y, 26, 30, '#4e3028') + R(x + 3, y + 2, 3.5, 28, '#e2c9ae') + R(x + 19.5, y + 2, 3.5, 28, '#e2c9ae') + R(x + 9, y + 12, 8, 18, '#2a1814'); });
+  s += R(0, 112, 320, 38, '#5aa5d4') + wave(126, W, .5) + wave(140, W, .35);
+  for (var i = 0; i < 6; i++) { var x = 14 + i * 52; s += R(x, 92, 36, 22, i % 2 ? '#f7e4cc' : '#f2d6bd') + R(x + 4, 98, 7, 7, '#7a4b3a') + R(x + 20, 98, 7, 7, '#7a4b3a') + L('M' + x + ' 92 L' + (x + 36) + ' 114 M' + (x + 36) + ' 92 L' + x + ' 114', '#8a5a44', 1, .5) + P((x - 3) + ',92 ' + (x + 18) + ',76 ' + (x + 39) + ',92', '#b9573f') + R(x, 116, 36, 12, i % 2 ? '#f7e4cc' : '#f2d6bd', .22); }
+  return s + R(0, 112, 320, 2, '#8e6350');
+};
+SC.yivli = function () {
+  var s = sky() + sun(60, 32, 13) + P('0,100 50,62 96,86 140,56 200,92 250,60 320,92 320,100 0,100', '#c98a92') + P('140,56 128,70 136,66 142,72 150,64', W) + P('250,60 240,74 248,70 254,76 262,68', W) + R(0, 100, 320, 50, '#4aa0d0') + wave(116, W, .4) + wave(134, W, .3);
+  s += P('0,104 0,84 130,84 156,104', '#d1ad8a') + houses(88, 6, 120, 24, '#b9573f') + R(136, 84, 30, 22, '#d8b99a') + A('M144 106 V94 A7 7 0 0 1 158 94 V106Z', '#7a4b3a') + R(145, 40, 12, 46, '#b9573f') + L('M148 40 V86 M151 40 V86 M154 40 V86', '#8f3f2e', 1.2) + R(141, 56, 20, 4, '#7a3a2e') + R(143, 38, 16, 4, '#7a3a2e') + P('144,38 151,16 158,38', '#7a8f95');
+  s += P('230,120 230,92 254,120', W) + P('228,120 228,100 212,120', '#fbd0d4') + R(210, 120, 48, 5, '#8f1019') + L('M230 92 V120', '#6b4a3a', 1.2) + L('M60 74 q4 -4 8 0 q4 -4 8 0', '#4a3f44', 1.2, .6);
+  return s;
+};
+SC.whitelake = function () {
+  var s = sky() + sun(268, 26, 11) + P('0,86 80,58 170,82 250,56 320,80 320,100 0,100', '#c98a92') + P('0,100 100,82 200,98 320,84 320,100', '#b9777f') + R(0, 94, 320, 56, '#43c7bf') + P('0,150 0,106 70,102 120,120 150,150', W) + P('320,150 320,112 262,112 218,150', W) + P('0,106 70,102 120,120 100,118 40,112', '#f1f1ea') + E(160, 112, 60, 6, '#7fe0d8', .7) + P('90,150 140,124 220,124 250,150', '#2fb7b0', .6);
+  s += wave(106, W, .55) + wave(130, W, .45) + L('M30 128 q30 -10 60 4 M230 136 q22 -8 44 2', '#e6f2ee', 2.4, .9) + L('M180 104 h40 M130 116 h30', W, 1.8, .6);
+  return s;
+};
+
+function scene(id) {
+  var f = SC[id] || SC.ararat;
+  return '<svg viewBox="0 0 320 150" preserveAspectRatio="xMidYMid slice" aria-hidden="true"><defs><linearGradient id="sk" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#f6c4ca"/><stop offset="1" stop-color="#fff5ef"/></linearGradient><pattern id="tess" width="6" height="6" patternUnits="userSpaceOnUse"><path d="M6 0H0V6" fill="none" stroke="#fff" stroke-opacity=".5" stroke-width="1"/></pattern></defs>' + f() + '</svg>';
+}
+
+
+  /* ---------- harita ---------- */
+  var b = D.bbox, m = 12;
+  svg.setAttribute('viewBox', [b[0] - m, b[1] - m, b[2] - b[0] + 2 * m, b[3] - b[1] + 2 * m].join(' '));
+
+  var byCode = {}, list = D.provinces;
+  list.forEach(function (p) {
+    var el = document.createElementNS(NS, 'path');
+    el.setAttribute('d', p.d);
+    el.setAttribute('class', 'il');
+    el.setAttribute('data-code', p.code);
+    el.setAttribute('tabindex', '0');
+    el.setAttribute('role', 'button');
+    el.setAttribute('aria-label', p.name + ', plaka ' + pad2(p.code) + ', ' + p.region);
+    gProv.appendChild(el);
+    p.el = el;
+    byCode[p.code] = p;
+  });
+
+  list.forEach(function (p) {
+    var bb = p.el.getBBox();
+    var mx = Math.max(bb.width, bb.height);
+    p.scale = 1 + Math.min(0.35, Math.max(0.045, 9 / mx));
+    if (bb.width < 20 || bb.height < 14) return;
+    var pts = [[p.cx, p.cy], [bb.x + bb.width / 2, bb.y + bb.height / 2]], at = null;
+    for (var i = 0; i < pts.length && !at; i++) {
+      try { if (p.el.isPointInFill(new DOMPoint(pts[i][0], pts[i][1]))) at = pts[i]; } catch (e) { at = pts[0]; }
+    }
+    if (!at) return;
+    var t = document.createElementNS(NS, 'text');
+    t.setAttribute('class', 'code');
+    t.setAttribute('x', at[0]);
+    t.setAttribute('y', at[1]);
+    t.textContent = pad2(p.code);
+    gCodes.appendChild(t);
+  });
+
+  /* ---------- yükselme ve parlama (klon haritanın üstünde durur) ---------- */
+  var hov = null, pin = null, shown = null, timer = null, current = null;
+  function pop(code) {
+    if (code === current) return;
+    current = code;
+    Array.prototype.slice.call(gPop.children).forEach(function (n) {
+      n.classList.remove('lift'); n.classList.add('out');
+      setTimeout(function () { n.remove(); }, 230);
+    });
+    list.forEach(function (p) { p.el.classList.toggle('on', p.code === code); });
+    svg.classList.toggle('dim', code != null);
+    if (code == null) return;
+    var p = byCode[code];
+    var c = document.createElementNS(NS, 'path');
+    c.setAttribute('d', p.d);
+    c.setAttribute('class', 'pop');
+    c.style.setProperty('--s', p.scale.toFixed(3));
+    gPop.appendChild(c);
+    requestAnimationFrame(function () { requestAnimationFrame(function () { c.classList.add('lift'); }); });
+  }
+
+  function moveTip(code, e) {
+    if (code == null) { tip.classList.remove('on'); return; }
+    var p = byCode[code];
+    tip.innerHTML = '<b></b><span></span>';
+    tip.firstChild.textContent = pad2(p.code);
+    tip.lastChild.textContent = p.name;
+    var r = stage.getBoundingClientRect();
+    var x = e.clientX - r.left + stage.scrollLeft + 14, y = e.clientY - r.top + stage.scrollTop + 18;
+    if (x + tip.offsetWidth > stage.scrollLeft + r.width - 8) x = e.clientX - r.left + stage.scrollLeft - tip.offsetWidth - 14;
+    tip.style.transform = 'translate(' + Math.round(x) + 'px,' + Math.round(y) + 'px)';
+    tip.classList.add('on');
+  }
+
+  /* ---------- ayrıntı kartı ---------- */
+  function openCard(code, pinIt) {
+    var p = byCode[code];
+    shown = code;
+    pin = pinIt ? code : null;
+    $('c-art').innerHTML = scene(p.pic);
+    $('c-code').textContent = pad2(p.code);
+    $('c-cap').textContent = p.cap;
+    $('c-name').textContent = p.name;
+    $('c-region').textContent = p.region;
+    $('c-desc').textContent = p.desc;
+    var ul = $('c-known'); ul.textContent = '';
+    p.known.forEach(function (k) { var li = document.createElement('li'); li.textContent = k; ul.appendChild(li); });
+    var r = p.el.getBoundingClientRect();
+    card.classList.toggle('left', r.left + r.width / 2 > window.innerWidth / 2);
+    card.classList.add('in');
+    card.setAttribute('aria-hidden', 'false');
+  }
+  function closeCard() {
+    clearTimeout(timer);
+    shown = null; pin = null;
+    card.classList.remove('in');
+    card.setAttribute('aria-hidden', 'true');
+    pop(hov);
+  }
+
+  function enter(code, e) {
+    if (code === hov) { if (code != null) moveTip(code, e); return; }
+    hov = code;
+    pop(code != null ? code : pin);
+    moveTip(code, e || { clientX: 0, clientY: 0 });
+    clearTimeout(timer);
+    if (code != null) {
+      timer = setTimeout(function () { openCard(code, false); }, shown != null ? 200 : 600);
+    } else if (pin == null && shown != null) {
+      timer = setTimeout(closeCard, 450);
+    }
+  }
+  function codeOf(t) {
+    var el = t.closest ? t.closest('.il') : null;
+    return el ? +el.getAttribute('data-code') : null;
+  }
+
+  svg.addEventListener('pointermove', function (e) {
+    if (e.pointerType !== 'mouse') return;
+    enter(codeOf(e.target), e);
+  });
+  svg.addEventListener('pointerleave', function (e) {
+    if (e.pointerType !== 'mouse') return;
+    enter(null, e);
+  });
+  stage.addEventListener('click', function (e) {
+    var c = codeOf(e.target);
+    if (c == null) { closeCard(); return; }
+    clearTimeout(timer);
+    pop(c);
+    openCard(c, true);
+  });
+  svg.addEventListener('keydown', function (e) {
+    var c = codeOf(e.target);
+    if (c != null && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); pop(c); openCard(c, true); }
+  });
+  svg.addEventListener('focusin', function (e) {
+    var c = codeOf(e.target);
+    if (c != null) { clearTimeout(timer); pop(c); openCard(c, false); }
+  });
+  svg.addEventListener('focusout', function (e) {
+    if (!e.relatedTarget || !(e.relatedTarget.closest && e.relatedTarget.closest('.il'))) {
+      if (pin == null) closeCard(); else pop(pin);
+    }
+  });
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape') { closeCard(); if (document.activeElement && document.activeElement.blur) document.activeElement.blur(); }
+  });
+  $('c-close').addEventListener('click', closeCard);
+})();
+</script>
+
+</body></html>
