@@ -40,7 +40,7 @@ body {
 .app { height: 100%; display: flex; flex-direction: column; padding-inline: clamp(16px, 2.5vw, 36px); padding-block: 20px; }
 
 .stage { position: relative; flex: 1; min-height: 0; overflow: auto; background: var(--bg); }
-.map { display: block; width: 100%; height: 100%; min-width: 780px; overflow: visible; }
+.map { display: block; width: 100%; height: 100%; min-width: 780px; overflow: visible; touch-action: pinch-zoom; -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent; }
 
 .il {
   fill: var(--red);
@@ -201,10 +201,19 @@ body {
 @media (max-width: 640px) {
   .card, .card.left { left: 16px; right: 16px; width: auto; transform-origin: bottom center; }
 }
+@media (max-width: 640px) {
+  .map { min-width: 0; }
+  .card.touching { pointer-events: none; opacity: .94; }
+  .card { max-height: 54vh; max-height: 54dvh; }
+  .card.top { bottom: auto; top: calc(12px + env(safe-area-inset-top, 0px)); transform-origin: top center; transform: translateY(-14px) scale(.97); }
+  .card.top.in { transform: none; }
+}
 @media (prefers-reduced-motion: reduce) {
   .pop, .card, .il, .tip { transition: none !important; }
   .pop.shake { animation: none !important; }
 }
+.touch-hint { display: none; position: fixed; left: 28px; right: 28px; bottom: calc(44px + env(safe-area-inset-bottom, 0px)); margin: 0; text-align: center; color: var(--muted); font-size: 14px; line-height: 1.5; pointer-events: none; }
+@media (hover: none) and (max-width: 640px) { .touch-hint { display: block; } .touch-hint[hidden] { display: none; } }
 </style>
 
 <div class="app">
@@ -216,6 +225,7 @@ body {
     </svg>
     <div class="tip" id="tip" aria-hidden="true"></div>
   </div>
+  <p class="touch-hint" id="touch-hint">Bir ile dokunun ya da parmağınızı harita üzerinde gezdirin; bir an beklerseniz ayrıntı kartı açılır.</p>
 </div>
 
 <aside class="card" id="card" aria-live="polite" aria-hidden="true">
@@ -935,6 +945,8 @@ function scene(id) {
 
 
   /* ---------- harita ---------- */
+  function fitMap() { svg.setAttribute('preserveAspectRatio', window.innerWidth <= 640 ? 'xMidYMin meet' : 'xMidYMid meet'); }
+  fitMap(); window.addEventListener('resize', fitMap);
   var b = D.bbox, m = 12;
   svg.setAttribute('viewBox', [b[0] - m, b[1] - m, b[2] - b[0] + 2 * m, b[3] - b[1] + 2 * m].join(' '));
 
@@ -1007,6 +1019,15 @@ function scene(id) {
     tip.lastChild.textContent = p.name;
     var r = stage.getBoundingClientRect();
     var x = e.clientX - r.left + stage.scrollLeft + 14, y = e.clientY - r.top + stage.scrollTop + 18;
+    if (e.pointerType === 'touch') {
+      x = e.clientX - r.left + stage.scrollLeft - tip.offsetWidth / 2;
+      y = e.clientY - r.top + stage.scrollTop - 64;
+      if (y < 4) y = e.clientY - r.top + stage.scrollTop + 40;
+      x = Math.max(stage.scrollLeft + 4, Math.min(x, stage.scrollLeft + r.width - tip.offsetWidth - 4));
+      tip.style.transform = 'translate(' + Math.round(x) + 'px,' + Math.round(y) + 'px)';
+      tip.classList.add('on');
+      return;
+    }
     if (x + tip.offsetWidth > stage.scrollLeft + r.width - 8) x = e.clientX - r.left + stage.scrollLeft - tip.offsetWidth - 14;
     tip.style.transform = 'translate(' + Math.round(x) + 'px,' + Math.round(y) + 'px)';
     tip.classList.add('on');
@@ -1016,6 +1037,7 @@ function scene(id) {
   function openCard(code, pinIt) {
     var p = byCode[code];
     shown = code;
+    $('touch-hint').hidden = true;
     pin = pinIt ? code : null;
     $('c-art').innerHTML = scene(p.pic);
     $('c-code').textContent = pad2(p.code);
@@ -1040,6 +1062,8 @@ function scene(id) {
     card.scrollTop = 0;
     var r = p.el.getBoundingClientRect();
     card.classList.toggle('left', r.left + r.width / 2 > window.innerWidth / 2);
+    card.classList.toggle('top', window.innerWidth <= 640 && r.top + r.height / 2 > window.innerHeight / 2);
+    if (window.matchMedia && matchMedia('(hover: none)').matches) $('c-hint').textContent = 'İpucu: parmağınızı kaldırınca kart sabitlenir; bağlantılara dokunabilirsiniz.';
     card.classList.add('in');
     card.setAttribute('aria-hidden', 'false');
   }
@@ -1077,7 +1101,9 @@ function scene(id) {
     if (e.pointerType !== 'mouse') return;
     enter(null, e);
   });
+  var lastTouch = 0, touching = false;
   stage.addEventListener('click', function (e) {
+    if (Date.now() - lastTouch < 800) return;
     var c = codeOf(e.target);
     if (c == null) { closeCard(); return; }
     clearTimeout(timer);
@@ -1090,7 +1116,7 @@ function scene(id) {
   });
   svg.addEventListener('focusin', function (e) {
     var c = codeOf(e.target);
-    if (c != null) { clearTimeout(timer); pop(c); openCard(c, false); }
+    if (c != null && !touching && Date.now() - lastTouch > 800) { clearTimeout(timer); pop(c); openCard(c, false); }
   });
   svg.addEventListener('focusout', function (e) {
     if (!e.relatedTarget || !(e.relatedTarget.closest && e.relatedTarget.closest('.il'))) {
@@ -1099,6 +1125,37 @@ function scene(id) {
   });
   document.addEventListener('keydown', function (e) {
     if (e.key === 'Escape') { closeCard(); if (document.activeElement && document.activeElement.blur) document.activeElement.blur(); }
+  });
+  /* ---------- dokunmatik: parmağı ilin üzerinde tut/kaydır = fareyle üzerine gelmek ---------- */
+  function touchCode(e) {
+    var el = document.elementFromPoint(e.clientX, e.clientY);
+    return el ? codeOf(el) : null;
+  }
+  svg.addEventListener('pointerdown', function (e) {
+    if (e.pointerType !== 'touch') return;
+    touching = true; lastTouch = Date.now(); card.classList.add('touching');
+    try { e.target.releasePointerCapture(e.pointerId); } catch (_) {}
+    pin = null;
+    enter(touchCode(e), e);
+  });
+  document.addEventListener('pointermove', function (e) {
+    if (e.pointerType !== 'touch' || !touching) return;
+    lastTouch = Date.now();
+    enter(touchCode(e), e);
+  });
+  document.addEventListener('pointerup', function (e) {
+    if (e.pointerType !== 'touch' || !touching) return;
+    touching = false; lastTouch = Date.now(); card.classList.remove('touching');
+    if (e.target.closest && e.target.closest('.card')) return;
+    var c = touchCode(e);
+    clearTimeout(timer);
+    tip.classList.remove('on');
+    if (c != null) { pop(c); openCard(c, true); } else { hov = null; closeCard(); }
+  });
+  document.addEventListener('pointercancel', function (e) {
+    if (e.pointerType !== 'touch' || !touching) return;
+    touching = false; card.classList.remove('touching');
+    if (pin == null) enter(null, { clientX: 0, clientY: 0 });
   });
   card.addEventListener('pointerenter', function () { clearTimeout(timer); });
   card.addEventListener('pointerleave', function (e) {
