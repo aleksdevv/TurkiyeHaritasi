@@ -219,6 +219,11 @@ body {
 .relief { position: absolute; inset: 0; z-index: 1; touch-action: none; background: #dff1fa; cursor: grab; }
 .relief:active { cursor: grabbing; }
 .relief[hidden] { display: none; }
+.legend { position: absolute; left: 16px; bottom: 16px; z-index: 4; padding: 8px 10px; border-radius: 10px; background: rgba(255,255,255,.92); border: 1px solid var(--card-line); font: 600 11px var(--body); color: var(--muted); box-shadow: 0 4px 12px -6px rgba(80,8,14,.35); }
+.legend[hidden] { display: none; }
+.legend .bar { width: 170px; height: 10px; border-radius: 999px; background: linear-gradient(90deg, #5cb847 0%, #9acc42 18%, #f2d152 38%, #e08c38 58%, #a35b2a 78%, #5e3319 92%, #fbf8f0 100%); margin-bottom: 4px; }
+.legend .ends { display: flex; justify-content: space-between; }
+
 .app.wide { padding: 0; }
 .app.wide .stage { border-radius: 0; }
 .relief canvas { display: block; width: 100%; height: 100%; }
@@ -234,6 +239,7 @@ body {
       <g id="pop"></g>
     </svg>
     <div class="relief" id="relief" hidden></div>
+    <div class="legend" id="legend" hidden><div class="bar"></div><div class="ends"><span>Alçak</span><span>Yüksek</span></div></div>
     <button class="mode-btn" id="mode-btn" type="button" aria-pressed="false" title="Sürükle: kaydır · Sağ tık ya da Shift + sürükle: döndür · Tekerlek: yakınlaştır">Fiziksel harita</button>
     <div class="tip" id="tip" aria-hidden="true"></div>
   </div>
@@ -1194,6 +1200,7 @@ function scene(id) {
     tip.classList.remove('on');
     hov = null; current = null;
     reliefEl.hidden = !on;
+    $('legend').hidden = !on;
     document.querySelector('.app').classList.toggle('wide', on);
     svg.style.display = on ? 'none' : '';
     rl.setMode(on);
@@ -1221,7 +1228,7 @@ function scene(id) {
   var D = window.__D;
   var x0 = D.bbox[0], y0 = D.bbox[1], BW = D.bbox[2] - x0, BH = D.bbox[3] - y0;
   var PW = 1024, PH = Math.round(PW * BH / BW);
-  var WW = 100, WH = WW * BH / BW, HS = 9, WATER = -0.35, FLOOR = -0.9, LIFT = 0.4;
+  var WW = 100, WH = WW * BH / BW, HS = 9, WATER = -0.35, FLOOR = -0.9, LIFT = 0.0;
   var SX = 220, SY = Math.round(SX * BH / BW);
   var SEA = '#8fcbe6', LAND = '#d71f2b', HOT = '#ff3b4d', EDGE = '#ffffff';
   var FOG = [0xdf / 255, 0xf1 / 255, 0xfa / 255];
@@ -1262,6 +1269,19 @@ function scene(id) {
     return out;
   }
 
+  function vhash(x, y) { var v = Math.sin(x * 127.1 + y * 311.7) * 43758.5453; return v - Math.floor(v); }
+  function vnoise(x, y) {
+    var ix = Math.floor(x), iy = Math.floor(y), fx = x - ix, fy = y - iy;
+    fx = fx * fx * (3 - 2 * fx); fy = fy * fy * (3 - 2 * fy);
+    var a = vhash(ix, iy), b = vhash(ix + 1, iy), c = vhash(ix, iy + 1), d = vhash(ix + 1, iy + 1);
+    return (a + (b - a) * fx) + ((c + (d - c) * fx) - (a + (b - a) * fx)) * fy;
+  }
+  function fbm(x, y) {
+    var s = 0, a = 0.5, f = 1;
+    for (var k = 0; k < 4; k++) { s += a * vnoise(x * f, y * f); a *= 0.5; f *= 2.1; }
+    return s;
+  }
+
   // province id raster (code stored in red channel)
   var ids = null, Hbase = null, colorCv = null, cctx = null;
   var sampIdx = null, Zg = null, verts = null, landIdx = null, waterIdx = null, waterVert = null;
@@ -1288,12 +1308,12 @@ function scene(id) {
     for (var py = 0; py < PH; py++) for (var px = 0; px < PW; px++) {
       var idx = py * PW + px;
       if (!ids[idx]) { Hraw[idx] = FLOOR; continue; }
-      var h = 0.12, k, dx, dy;
+      var h = 0.0, k, dx, dy;
       for (k = 0; k < cen.length; k++) {
         var m = cen[k]; dx = px - m.x; dy = py - m.y;
         h += m.a * Math.exp(-(dx * dx + dy * dy) / (2 * m.s * m.s));
       }
-      h += 0.05 * Math.sin(px * 0.021 + 1.3 * Math.sin(py * 0.017)) + 0.04 * Math.sin(px * 0.047 - py * 0.033) + 0.03 * Math.sin(px * 0.09 + py * 0.11);
+      h += 0.22 * fbm(px / 110, py / 110) + 0.06 * fbm(px / 40 + 7.3, py / 40 + 3.1);
       Hraw[idx] = Math.max(0.03, h);
     }
     Hbase = blur(Hraw, 3);
@@ -1364,42 +1384,68 @@ function scene(id) {
       '#version 300 es', 'precision highp float;',
       'in vec3 aPos; in vec3 aNrm; in vec2 aUv; in float aW;',
       'uniform vec3 uEye,uR,uU,uF; uniform float uTanH,uAsp,uNear,uFar,uFogN,uFogF; uniform vec2 uOff;',
-      'out vec2 vUv; out vec3 vN; out float vFog;',
+      'out vec2 vUv; out vec3 vN; out float vFog; out float vE; out float vG; uniform float uHS;',
       'void main(){',
       '  vec3 p = aPos + vec3(uOff * aW, 0.0);',
+      '  vE = aPos.z / uHS; vG = aW;',
       '  vec3 v = p - uEye; float w = dot(v, uF);',
       '  gl_Position = vec4(dot(v,uR)/(uTanH*uAsp), dot(v,uU)/uTanH, w*(uFar+uNear)/(uFar-uNear) - 2.0*uFar*uNear/(uFar-uNear), w);',
       '  vUv = aUv; vN = aNrm; vFog = clamp((w-uFogN)/(uFogF-uFogN), 0.0, 1.0);',
       '}'].join('\n');
     var FS_LAND = [
       '#version 300 es', 'precision highp float;',
-      'in vec2 vUv; in vec3 vN; in float vFog;',
+      'in vec2 vUv; in vec3 vN; in float vFog; in float vE; in float vG;',
       'uniform sampler2D uTex; uniform vec3 uL; uniform vec3 uFog;',
       'out vec4 o;',
+      'vec3 ramp(float e){',
+      '  vec3 c0 = vec3(0.36,0.72,0.28), c1 = vec3(0.60,0.80,0.26), c2 = vec3(0.95,0.82,0.32), c3 = vec3(0.88,0.55,0.22), c4 = vec3(0.64,0.34,0.16), c5 = vec3(0.40,0.20,0.10), c6 = vec3(0.98,0.97,0.94);',
+      '  if (e < 0.15) return mix(c0, c1, smoothstep(0.0, 0.15, e));',
+      '  if (e < 0.35) return mix(c1, c2, smoothstep(0.15, 0.35, e));',
+      '  if (e < 0.60) return mix(c2, c3, smoothstep(0.35, 0.60, e));',
+      '  if (e < 0.85) return mix(c3, c4, smoothstep(0.60, 0.85, e));',
+      '  if (e < 1.05) return mix(c4, c5, smoothstep(0.85, 1.05, e));',
+      '  return mix(c5, c6, smoothstep(1.05, 1.20, e));',
+      '}',
       'void main(){',
-      '  vec3 c = texture(uTex, vUv).rgb;',
+      '  vec3 c = texture(uTex, vUv).rgb * ramp(vE);',
       '  float d = max(dot(normalize(vN), normalize(uL)), 0.0);',
-      '  c *= 0.58 + 0.66*d;',
+      '  c *= 0.45 + 0.85*d;',
+      '  c = mix(c, vec3(1.0,0.98,0.92), 0.3*vG) + vec3(0.12)*vG;',
       '  o = vec4(mix(c, uFog, vFog), 1.0);',
       '}'].join('\n');
     var VS_WATER = [
       '#version 300 es', 'precision highp float;',
       'in vec3 aPos;',
-      'uniform vec3 uEye,uR,uU,uF; uniform float uTanH,uAsp,uNear,uFar,uFogN,uFogF,uT;',
-      'out float vH; out float vFog;',
-      'float wave(vec2 p){ return 0.22*sin(p.x*0.35+uT*1.1) + 0.16*sin(p.y*0.45-uT*0.9) + 0.08*sin((p.x+p.y)*0.8+uT*1.7); }',
+      'uniform vec3 uEye,uR,uU,uF; uniform float uTanH,uAsp,uNear,uFar,uFogN,uFogF;',
+      'out vec3 vP; out float vFog;',
       'void main(){',
-      '  vec3 p = aPos; float h = wave(p.xy); p.z += h;',
-      '  vec3 v = p - uEye; float w = dot(v, uF);',
+      '  vec3 v = aPos - uEye; float w = dot(v, uF);',
       '  gl_Position = vec4(dot(v,uR)/(uTanH*uAsp), dot(v,uU)/uTanH, w*(uFar+uNear)/(uFar-uNear) - 2.0*uFar*uNear/(uFar-uNear), w);',
-      '  vH = h; vFog = clamp((w-uFogN)/(uFogF-uFogN), 0.0, 1.0);',
+      '  vP = aPos; vFog = clamp((w-uFogN)/(uFogF-uFogN), 0.0, 1.0);',
       '}'].join('\n');
     var FS_WATER = [
       '#version 300 es', 'precision highp float;',
-      'in float vH; in float vFog; uniform vec3 uFog; out vec4 o;',
+      'in vec3 vP; in float vFog;',
+      'uniform vec3 uFog, uEye; uniform float uT; out vec4 o;',
+      'float wv(vec2 p, float t){ return 0.22*sin(p.x*0.35+t*1.1) + 0.16*sin(p.y*0.45-t*0.9) + 0.08*sin((p.x+p.y)*0.8+t*1.7); }',
       'void main(){',
-      '  float t = clamp(vH*1.2 + 0.5, 0.0, 1.0);',
-      '  vec3 c = mix(vec3(0.27,0.60,0.82), vec3(0.62,0.84,0.95), t*0.6);',
+      '  vec2 q = vP.xy;',
+      '  float dx = 0.077*cos(q.x*0.35+uT*1.1) + 0.064*cos((q.x+q.y)*0.8+uT*1.7);',
+      '  float dy = 0.072*cos(q.y*0.45-uT*0.9) + 0.064*cos((q.x+q.y)*0.8+uT*1.7);',
+      '  dx += 0.025*cos(q.x*1.9+q.y*0.7+uT*2.1); dy += 0.025*cos(q.y*2.3-q.x*0.4+uT*1.7);',
+      '  vec3 N = normalize(vec3(-dx, -dy, 1.0));',
+      '  float vH = wv(q, uT);',
+      '  vec3 V = normalize(uEye - vP);',
+      '  vec3 L = normalize(vec3(-0.5, 0.6, 0.5));',
+      '  float fres = pow(1.0 - max(dot(N, V), 0.0), 4.0);',
+      '  vec3 deep = vec3(0.05, 0.30, 0.50), shallow = vec3(0.14, 0.56, 0.74);',
+      '  vec3 c = mix(deep, shallow, clamp(vH*1.4 + 0.5, 0.0, 1.0));',
+      '  vec3 sky = mix(vec3(0.55,0.78,0.92), uFog, 0.5);',
+      '  c = mix(c, sky, clamp(fres*0.85 + 0.05, 0.0, 1.0));',
+      '  vec3 R = reflect(-V, N);',
+      '  float spec = pow(max(dot(R, L), 0.0), 180.0);',
+      '  c += vec3(1.0, 0.96, 0.85) * spec * 0.5;',
+      '  c += vec3(0.04,0.08,0.10) * max(dot(N,L),0.0);',
       '  o = vec4(mix(c, uFog, vFog), 1.0);',
       '}'].join('\n');
 
@@ -1485,18 +1531,18 @@ function scene(id) {
   function paintColor(code) {
     var g = cctx;
     g.setTransform(1, 0, 0, 1, 0, 0);
-    g.fillStyle = SEA; g.fillRect(0, 0, PW, PH);
+    g.fillStyle = '#ffffff'; g.fillRect(0, 0, PW, PH);
     g.setTransform(PW / BW, 0, 0, PH / BH, -x0 * PW / BW, -y0 * PH / BH);
-    g.lineJoin = 'round'; g.lineWidth = 1.3 * BW / PW; g.strokeStyle = EDGE;
+    g.lineJoin = 'round'; g.lineWidth = 1.2 * BW / PW; g.strokeStyle = '#4a3a2c';
     paths.forEach(function (o) {
       if (o.code === code) return;
-      g.fillStyle = LAND; g.fill(o.path); g.stroke(o.path);
+      g.fillStyle = '#ffffff'; g.fill(o.path); g.stroke(o.path);
     });
     if (code != null && byPath[code]) {
       var o = byPath[code];
-      g.save(); g.shadowColor = 'rgba(255,60,80,0.85)'; g.shadowBlur = 24;
-      g.fillStyle = HOT; g.fill(o.path); g.restore();
-      g.lineWidth = 2.4 * BW / PW; g.strokeStyle = '#ffffff'; g.stroke(o.path);
+      g.save(); g.shadowColor = 'rgba(255,255,255,0.95)'; g.shadowBlur = 20;
+      g.fillStyle = '#ffffff'; g.fill(o.path); g.restore();
+      g.lineWidth = 2.0 * BW / PW; g.strokeStyle = '#fff8ee'; g.stroke(o.path);
     }
     gl.bindTexture(gl.TEXTURE_2D, tex);
     gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
@@ -1601,6 +1647,7 @@ function scene(id) {
     var off = shakeOff(t);
     gl.uniform2f(loc(lp, 'uOff'), off[0], off[1]);
     gl.uniform3f(loc(lp, 'uL'), -0.5, 0.6, 0.7);
+    gl.uniform1f(loc(lp, 'uHS'), HS);
     gl.uniform1i(loc(lp, 'uTex'), 0);
     gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, tex);
     gl.bindBuffer(gl.ARRAY_BUFFER, landVBO);
